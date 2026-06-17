@@ -1,0 +1,859 @@
+<template>
+  <div>
+    <ProjectHeader current-step="summary" />
+
+    <div class="panel panel-pad">
+      <div class="workflow-panel-actions">
+        <el-button type="primary" :icon="Refresh" @click="refreshRisks">刷新统计数据</el-button>
+        <el-button type="success" @click="router.push(`/projects/${projectId}/reports`)">下一步</el-button>
+      </div>
+
+      <el-alert
+        title="风险清单会基于现场测评中符合情况为基本符合或不符合的记录生成，并与风险源、风险清单、处置建议保持一对一。"
+        type="warning"
+        show-icon
+        :closable="false"
+        style="margin-bottom: 16px"
+      />
+
+      <el-tabs v-model="activeTab" @tab-change="load">
+        <el-tab-pane label="数据安全风险源清单" name="sources">
+          <div class="summary-tab-actions">
+            <el-upload
+              :auto-upload="false"
+              :show-file-list="false"
+              accept=".xlsx,.xls"
+              :disabled="importingTab === 'sources'"
+              :on-change="(file) => importRiskSummary('sources', file)"
+            >
+              <el-button :icon="Upload" :loading="importingTab === 'sources'">导入</el-button>
+            </el-upload>
+            <el-button :icon="Download" :loading="exportingTab === 'sources'" @click="exportRiskSummary('sources')">
+              导出
+            </el-button>
+          </div>
+          <el-table v-loading="loading" :data="riskSources" border>
+            <el-table-column type="index" label="序号" width="70" :index="sourceIndex" />
+            <el-table-column label="风险类型" min-width="160">
+              <template #default="{ row }">{{ formatList(row.riskTypes) }}</template>
+            </el-table-column>
+            <el-table-column prop="checkPoint" label="检查要点" min-width="180" show-overflow-tooltip />
+            <el-table-column prop="evaluationRecord" label="评估结果" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="riskDescription" label="风险描述" min-width="240" show-overflow-tooltip />
+            <el-table-column prop="riskSourceDescription" label="风险源描述" min-width="260" show-overflow-tooltip />
+            <el-table-column prop="relatedData" label="涉及的数据及类型、级别" min-width="220" show-overflow-tooltip />
+            <el-table-column label="涉及的数据处理活动" min-width="180">
+              <template #default="{ row }">{{ formatProcessingActivityList(row.relatedActivities) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="100" fixed="right">
+              <template #default="{ row }"><el-button link type="primary" @click="openEdit(row)">修改</el-button></template>
+            </el-table-column>
+          </el-table>
+          <div class="summary-pagination">
+            <el-pagination
+              v-model:current-page="pagination.sources.pageNo"
+              v-model:page-size="pagination.sources.pageSize"
+              background
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="pagination.sources.total"
+              :page-sizes="[10, 20, 50]"
+              @current-change="handlePageChange('sources')"
+              @size-change="handlePageSizeChange('sources')"
+            />
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="数据安全风险清单" name="items">
+          <div class="summary-tab-actions">
+            <el-upload
+              :auto-upload="false"
+              :show-file-list="false"
+              accept=".xlsx,.xls"
+              :disabled="importingTab === 'items'"
+              :on-change="(file) => importRiskSummary('items', file)"
+            >
+              <el-button :icon="Upload" :loading="importingTab === 'items'">导入</el-button>
+            </el-upload>
+            <el-button :icon="Download" :loading="exportingTab === 'items'" @click="exportRiskSummary('items')">
+              导出
+            </el-button>
+            <el-button type="primary" :icon="DataAnalysis" :loading="batchAnalyzing" @click="suggestCurrentPageHarm">
+              批量辅助判定
+            </el-button>
+          </div>
+          <el-table v-loading="loading" :data="riskItems" border>
+            <el-table-column type="index" label="序号" width="70" :index="itemIndex" />
+            <el-table-column label="风险类型" min-width="150">
+              <template #default="{ row }">{{ formatList(row.riskTypes) }}</template>
+            </el-table-column>
+            <el-table-column prop="riskDescription" label="风险描述" min-width="220" show-overflow-tooltip />
+            <el-table-column prop="harmLevel" label="危害程度" width="120">
+              <template #default="{ row }">
+                <el-tag :type="levelTagType(row.harmLevel)" effect="plain">{{ formatAssessmentLevel(row.harmLevel) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="harmAnalysisStatus" label="判定状态" width="120">
+              <template #default="{ row }">
+                <el-tag :type="harmAnalysisStatusTagType(row.harmAnalysisStatus)" effect="plain">
+                  {{ formatHarmAnalysisStatus(row.harmAnalysisStatus) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="harmDescription" label="危害程度描述" min-width="240" show-overflow-tooltip />
+            <el-table-column prop="harmImpactObject" label="影响对象" min-width="160" show-overflow-tooltip />
+            <el-table-column prop="possibilityLevel" label="发生可能性" width="120">
+              <template #default="{ row }">
+                <el-tag :type="levelTagType(row.possibilityLevel)" effect="plain">{{ formatPossibilityLevel(row.possibilityLevel) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="riskSourceDescription" label="风险源描述" min-width="240" show-overflow-tooltip />
+            <el-table-column prop="riskLevel" label="风险等级" width="120">
+              <template #default="{ row }">
+                <el-tag :type="levelTagType(linkedRiskItemLevel(row))" effect="plain">
+                  {{ formatRiskLevel(linkedRiskItemLevel(row)) }}
+                </el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="relatedData" label="涉及的数据及类型、级别" min-width="220" show-overflow-tooltip />
+            <el-table-column label="涉及的数据处理活动" min-width="180">
+              <template #default="{ row }">{{ formatProcessingActivityList(row.relatedActivities) }}</template>
+            </el-table-column>
+            <el-table-column label="操作" width="240" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openEdit(row)">修改</el-button>
+                <el-button link type="primary" :loading="harmAnalyzingId === row.id" @click="suggestRowHarm(row)">辅助判定</el-button>
+                <el-button link :disabled="!hasHarmAnalysis(row)" @click="openHarmAnalysisDetail(row)">查看判定</el-button>
+              </template>
+            </el-table-column>
+          </el-table>
+          <div class="summary-pagination">
+            <el-pagination
+              v-model:current-page="pagination.items.pageNo"
+              v-model:page-size="pagination.items.pageSize"
+              background
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="pagination.items.total"
+              :page-sizes="[10, 20, 50]"
+              @current-change="handlePageChange('items')"
+              @size-change="handlePageSizeChange('items')"
+            />
+          </div>
+        </el-tab-pane>
+
+        <el-tab-pane label="数据安全风险处置建议" name="suggestions">
+          <el-table v-loading="loading" :data="riskSuggestions" border>
+            <el-table-column type="index" label="序号" width="70" :index="suggestionIndex" />
+            <el-table-column prop="riskDescription" label="风险描述" min-width="240" show-overflow-tooltip />
+            <el-table-column prop="riskSourceDescription" label="风险源描述" min-width="260" show-overflow-tooltip />
+            <el-table-column prop="riskLevel" label="风险等级" width="120">
+              <template #default="{ row }">
+                <el-tag :type="levelTagType(row.riskLevel)" effect="plain">{{ formatRiskLevel(row.riskLevel) }}</el-tag>
+              </template>
+            </el-table-column>
+            <el-table-column prop="remediationSuggestion" label="整改建议" min-width="280" show-overflow-tooltip />
+            <el-table-column label="操作" width="100" fixed="right">
+              <template #default="{ row }"><el-button link type="primary" @click="openEdit(row)">修改</el-button></template>
+            </el-table-column>
+          </el-table>
+          <div class="summary-pagination">
+            <el-pagination
+              v-model:current-page="pagination.suggestions.pageNo"
+              v-model:page-size="pagination.suggestions.pageSize"
+              background
+              layout="total, sizes, prev, pager, next, jumper"
+              :total="pagination.suggestions.total"
+              :page-sizes="[10, 20, 50]"
+              @current-change="handlePageChange('suggestions')"
+              @size-change="handlePageSizeChange('suggestions')"
+            />
+          </div>
+        </el-tab-pane>
+      </el-tabs>
+    </div>
+
+    <el-dialog v-model="importErrorVisible" title="汇总分析导入异常明细" width="860px">
+      <el-alert
+        :title="`已导入 ${importImportedCount} 条，发现 ${importFailedCount} 条异常明细。请检查提示行后重新导入。`"
+        type="warning"
+        show-icon
+        :closable="false"
+        style="margin-bottom: 16px"
+      />
+      <el-table :data="importErrorRows" border max-height="360" empty-text="接口未返回异常明细">
+        <el-table-column prop="rowNo" label="行号" width="100" />
+        <el-table-column prop="field" label="字段" width="180" />
+        <el-table-column prop="reason" label="原因" min-width="360" show-overflow-tooltip />
+      </el-table>
+      <template #footer>
+        <el-button type="primary" @click="importErrorVisible = false">知道了</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="editVisible" title="修改风险记录" width="760px">
+      <el-form :model="editForm" label-width="130px">
+        <template v-if="activeTab === 'sources'">
+          <el-form-item label="风险类型">
+            <el-select v-model="editForm.riskTypes" multiple filterable allow-create default-first-option style="width: 100%">
+              <el-option label="数据泄露" value="DATA_LEAKAGE" />
+              <el-option label="数据篡改" value="DATA_TAMPERING" />
+              <el-option label="权限滥用" value="PRIVILEGE_ABUSE" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="风险描述">
+            <el-input v-model="editForm.riskDescription" type="textarea" :rows="3" />
+          </el-form-item>
+          <el-form-item label="风险源描述">
+            <el-input v-model="editForm.riskSourceDescription" type="textarea" :rows="3" />
+          </el-form-item>
+          <el-form-item label="涉及的数据及类型、级别">
+            <el-input v-model="editForm.relatedData" />
+          </el-form-item>
+          <el-form-item label="涉及的数据处理活动">
+            <el-select v-model="editForm.relatedActivities" multiple style="width: 100%">
+              <el-option label="收集" value="COLLECT" />
+              <el-option label="传输" value="TRANSFER" />
+              <el-option label="存储" value="STORE" />
+              <el-option label="使用和加工" value="USE_PROCESS" />
+              <el-option label="提供" value="PROVIDE" />
+              <el-option label="公开" value="PUBLIC" />
+              <el-option label="删除" value="DELETE" />
+            </el-select>
+          </el-form-item>
+        </template>
+        <template v-if="activeTab === 'items'">
+          <el-form-item label="危害程度">
+            <el-select v-model="editForm.harmLevel" placeholder="请选择危害程度" style="width: 100%">
+              <el-option label="待评估" value="-" />
+              <el-option label="很高" value="VERY_HIGH" />
+              <el-option label="高" value="HIGH" />
+              <el-option label="较高" value="RELATIVELY_HIGH" />
+              <el-option label="中" value="MEDIUM" />
+              <el-option label="低" value="LOW" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="发生可能性">
+            <el-select v-model="editForm.possibilityLevel" placeholder="请选择发生可能性" style="width: 100%">
+              <el-option label="待评估" value="-" />
+              <el-option label="高" value="HIGH" />
+              <el-option label="中" value="MEDIUM" />
+              <el-option label="低" value="LOW" />
+            </el-select>
+          </el-form-item>
+          <el-form-item label="风险等级">
+            <el-tag :type="levelTagType(linkedEditRiskLevel)" effect="plain">
+              {{ formatRiskLevel(linkedEditRiskLevel) }}
+            </el-tag>
+          </el-form-item>
+        </template>
+        <el-form-item v-if="activeTab === 'suggestions'" label="整改建议">
+          <el-input v-model="editForm.remediationSuggestion" type="textarea" :rows="4" />
+        </el-form-item>
+      </el-form>
+
+      <template #footer>
+        <el-button @click="editVisible = false">取消</el-button>
+        <el-button type="primary" @click="saveEdit">确定</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog v-model="harmAnalysisVisible" title="风险危害程度辅助判定" width="860px">
+      <template v-if="harmAnalysisSuggestion">
+        <el-alert
+          v-if="harmAnalysisSuggestion.needsManualReview"
+          title="当前建议需要人工复核后再应用。"
+          type="warning"
+          show-icon
+          :closable="false"
+          style="margin-bottom: 16px"
+        />
+        <div class="harm-section-title">判定结果摘要</div>
+        <el-descriptions :column="2" border>
+          <el-descriptions-item label="风险危害程度">
+            <el-tag :type="levelTagType(harmAnalysisSuggestion.harmLevel)" effect="plain">
+              {{ formatAssessmentLevel(harmAnalysisSuggestion.harmLevel) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item label="模型状态">
+            {{ formatLlmStatus(harmAnalysisSuggestion.llmStatus) }}
+          </el-descriptions-item>
+          <el-descriptions-item label="模型名称" :span="2">
+            {{ harmAnalysisSuggestion.llmModel || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="影响对象" :span="2">
+            {{ harmAnalysisSuggestion.harmImpactObject || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="风险危害程度描述" :span="2">
+            {{ harmAnalysisSuggestion.harmDescription || '-' }}
+          </el-descriptions-item>
+          <el-descriptions-item label="风险危害程度示例" :span="2">
+            {{ harmAnalysisSuggestion.harmExample || '-' }}
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <div class="harm-trace">
+          <strong>四步判定过程</strong>
+          <ol>
+            <li v-for="item in formatHarmTraceSteps(harmAnalysisSuggestion.harmAnalysisTrace)" :key="item.key">
+              <span class="harm-step-title">{{ item.title }}</span>
+              <span>{{ item.content }}</span>
+              <div v-if="item.reason || item.basis.length || item.evidence.length" class="harm-step-extra">
+                <div v-if="item.reason" class="harm-step-extra-item">
+                  <span class="harm-step-extra-title">模型判断原因</span>
+                  <p>{{ item.reason }}</p>
+                </div>
+                <div v-if="item.basis.length" class="harm-step-extra-item">
+                  <span class="harm-step-extra-title">判定使用的信息</span>
+                  <ul class="harm-step-list">
+                    <li v-for="basis in item.basis" :key="basis">{{ basis }}</li>
+                  </ul>
+                </div>
+                <details v-if="item.evidence.length" class="harm-evidence">
+                  <summary>模型引用证据</summary>
+                  <ul class="harm-step-list">
+                    <li v-for="evidence in item.evidence" :key="evidence">{{ evidence }}</li>
+                  </ul>
+                </details>
+              </div>
+            </li>
+          </ol>
+        </div>
+      </template>
+      <el-empty v-else description="暂无辅助判定结果" />
+
+      <template #footer>
+        <el-button @click="harmAnalysisVisible = false">关闭</el-button>
+        <el-button
+          type="primary"
+          :disabled="!harmAnalysisSuggestion || isEmptyLevel(harmAnalysisSuggestion.harmLevel)"
+          :loading="harmApplying"
+          @click="applyHarmAnalysis"
+        >
+          确认应用
+        </el-button>
+      </template>
+    </el-dialog>
+  </div>
+</template>
+
+<script setup lang="ts">
+import { computed, onMounted, reactive, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { ElMessage, ElMessageBox } from 'element-plus';
+import type { UploadFile } from 'element-plus';
+import { DataAnalysis, Download, Refresh, Upload } from '@element-plus/icons-vue';
+import ProjectHeader from '@/components/ProjectHeader.vue';
+import { knowledgeApi } from '@/api/knowledgeApi';
+import { projectApi } from '@/api/projectApi';
+import { riskApi } from '@/api/riskApi';
+import type { RiskMatrix, RiskMatrixJson } from '@/types/knowledge';
+import type { HarmAnalysisStatus, HarmAnalysisSuggestion, HarmAnalysisTrace, RiskItem, RiskSource, RiskSuggestion } from '@/types/risk';
+import { downloadBlobFile } from '@/utils/fileActions';
+import { formatProcessingActivityList, riskLevelLabels } from '@/utils/labels';
+import { normalizeRiskSummaryExcelImportResult, type RiskSummaryImportError } from '@/utils/riskSummaryExcelImportResult';
+import { calculateRiskLevelByMatrix } from '@/utils/riskMatrix';
+
+type SummaryTab = 'sources' | 'items' | 'suggestions';
+type ImportableSummaryTab = Extract<SummaryTab, 'sources' | 'items'>;
+type EditForm = Partial<RiskSource & RiskItem & RiskSuggestion>;
+type SummaryPagination = {
+  pageNo: number;
+  pageSize: number;
+  total: number;
+};
+
+const route = useRoute();
+const router = useRouter();
+const projectId = String(route.params.projectId || '');
+const loading = ref(false);
+const activeTab = ref<SummaryTab>('sources');
+const riskSources = ref<RiskSource[]>([]);
+const riskItems = ref<RiskItem[]>([]);
+const riskSuggestions = ref<RiskSuggestion[]>([]);
+const importingTab = ref<ImportableSummaryTab | ''>('');
+const exportingTab = ref<ImportableSummaryTab | ''>('');
+const importErrorVisible = ref(false);
+const importErrorRows = ref<RiskSummaryImportError[]>([]);
+const importImportedCount = ref(0);
+const importFailedCount = ref(0);
+const editVisible = ref(false);
+const editingId = ref('');
+const editForm = reactive<EditForm>({});
+const harmAnalysisVisible = ref(false);
+const harmAnalyzingId = ref('');
+const batchAnalyzing = ref(false);
+const harmApplying = ref(false);
+const harmAnalysisSuggestion = ref<HarmAnalysisSuggestion | null>(null);
+const harmAnalysisRiskItemId = ref('');
+const harmAnalysisSuggestions = ref<Record<string, HarmAnalysisSuggestion>>({});
+const projectRiskMatrix = ref<RiskMatrixJson>({});
+const pagination = reactive<Record<SummaryTab, SummaryPagination>>({
+  sources: { pageNo: 1, pageSize: 10, total: 0 },
+  items: { pageNo: 1, pageSize: 10, total: 0 },
+  suggestions: { pageNo: 1, pageSize: 10, total: 0 }
+});
+
+const riskSummaryTabNames: Record<ImportableSummaryTab, string> = {
+  sources: '数据安全风险源清单',
+  items: '数据安全风险清单'
+};
+
+const harmLevelLabels: Record<string, string> = {
+  VERY_HIGH: '很高',
+  HIGH: '高',
+  RELATIVELY_HIGH: '较高',
+  MEDIUM: '中',
+  LOW: '低'
+};
+
+const possibilityLabels: Record<string, string> = {
+  HIGH: '高',
+  MEDIUM: '中',
+  LOW: '低'
+};
+
+const harmAnalysisStatusLabels: Record<HarmAnalysisStatus, string> = {
+  PENDING: '待确认',
+  CONFIRMED: '已确认',
+  MANUAL: '人工调整'
+};
+
+const llmStatusLabels: Record<string, string> = {
+  SUCCESS: '大模型判定',
+  FALLBACK: '规则兜底',
+  DISABLED: '未启用大模型',
+  PROVIDED: '联调回放'
+};
+
+const formatList = (value?: string[]) => (value?.length ? value.join('、') : '-');
+const isEmptyLevel = (value?: string) => !value || value === '-';
+const formatAssessmentLevel = (value?: string) => (isEmptyLevel(value) ? '待评估' : harmLevelLabels[value || ''] || value || '');
+const formatPossibilityLevel = (value?: string) => (isEmptyLevel(value) ? '待评估' : possibilityLabels[value || ''] || value || '');
+const formatRiskLevel = (value?: string) => (isEmptyLevel(value) ? '待评定' : riskLevelLabels[value || ''] || value || '');
+const calculateRiskLevel = (possibilityLevel?: string, harmLevel?: string) =>
+  calculateRiskLevelByMatrix(projectRiskMatrix.value, possibilityLevel, harmLevel);
+const linkedRiskItemLevel = (row: RiskItem) => calculateRiskLevel(row.possibilityLevel, row.harmLevel) || row.riskLevel || '';
+const linkedEditRiskLevel = computed(() => calculateRiskLevel(editForm.possibilityLevel, editForm.harmLevel) || editForm.riskLevel || '');
+const levelTagType = (value?: string) => {
+  if (isEmptyLevel(value)) return 'info';
+  if (value === 'VERY_HIGH' || value === 'HIGH' || value === 'MAJOR') return 'danger';
+  if (value === 'RELATIVELY_HIGH' || value === 'MEDIUM') return 'warning';
+  return 'success';
+};
+
+const formatHarmAnalysisStatus = (value?: HarmAnalysisStatus) => (value ? harmAnalysisStatusLabels[value] || value : '未判定');
+const harmAnalysisStatusTagType = (value?: HarmAnalysisStatus) => {
+  if (value === 'CONFIRMED') return 'success';
+  if (value === 'PENDING') return 'warning';
+  if (value === 'MANUAL') return 'info';
+  return 'info';
+};
+const formatLlmStatus = (value?: string) => (value ? llmStatusLabels[value] || value : '-');
+const getTraceText = (trace: HarmAnalysisTrace | undefined, key: string) => {
+  const value = trace?.[key];
+  return typeof value === 'string' ? value.trim() : '';
+};
+const getTraceStringList = (trace: HarmAnalysisTrace | undefined, key: string) => {
+  const value = trace?.[key];
+  if (Array.isArray(value)) {
+    return value
+      .map((item) => {
+        if (typeof item === 'string') return item.trim();
+        if (typeof item === 'number' || typeof item === 'boolean') return String(item);
+        return '';
+      })
+      .filter(Boolean);
+  }
+  if (typeof value === 'string' && value.trim()) return [value.trim()];
+  return [];
+};
+const formatHarmTraceSteps = (trace?: HarmAnalysisTrace) =>
+  [
+    {
+      key: 'step1',
+      title: '第一步：明确被评估对象类别',
+      content: getTraceText(trace, 'step1'),
+      reason: '',
+      basis: [],
+      evidence: []
+    },
+    {
+      key: 'step2',
+      title: '第二步：确定受侵害客体及侵害程度',
+      content: getTraceText(trace, 'step2'),
+      reason: getTraceText(trace, 'step2Reason'),
+      basis: getTraceStringList(trace, 'step2Basis'),
+      evidence: getTraceStringList(trace, 'step2Evidence')
+    },
+    {
+      key: 'step3',
+      title: '第三步：匹配数据安全保护等级',
+      content: getTraceText(trace, 'step3'),
+      reason: '',
+      basis: [],
+      evidence: []
+    },
+    {
+      key: 'step4',
+      title: '第四步：匹配风险危害程度等级',
+      content: getTraceText(trace, 'step4'),
+      reason: '',
+      basis: [],
+      evidence: []
+    }
+  ].filter((item) => item.content);
+const hasHarmAnalysis = (row: RiskItem) =>
+  Boolean(
+    harmAnalysisSuggestions.value[row.id] ||
+      row.harmDescription ||
+      row.harmImpactObject ||
+      row.harmExample ||
+      Object.keys(row.harmAnalysisTrace || {}).length
+  );
+
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
+  }
+  return fallback;
+};
+
+const exportRiskSummary = async (tab: ImportableSummaryTab) => {
+  exportingTab.value = tab;
+  try {
+    const blob = tab === 'sources' ? await riskApi.exportRiskSources(projectId) : await riskApi.exportRiskItems(projectId);
+    downloadBlobFile(`${riskSummaryTabNames[tab]}-${projectId}.xlsx`, blob);
+    ElMessage.success(`${riskSummaryTabNames[tab]}已导出`);
+  } catch (error) {
+    ElMessage.error(`${riskSummaryTabNames[tab]}导出失败：${getErrorMessage(error, '请稍后重试')}`);
+  } finally {
+    exportingTab.value = '';
+  }
+};
+
+const importRiskSummary = async (tab: ImportableSummaryTab, file: UploadFile) => {
+  if (!file.raw) return;
+
+  importingTab.value = tab;
+  try {
+    const result =
+      tab === 'sources'
+        ? await riskApi.importRiskSources(projectId, file.raw)
+        : await riskApi.importRiskItems(projectId, file.raw);
+    const feedback = normalizeRiskSummaryExcelImportResult(result);
+
+    pagination[tab].pageNo = 1;
+    if (activeTab.value !== tab) activeTab.value = tab;
+    await load();
+
+    if (feedback.hasErrors) {
+      importErrorRows.value = feedback.errors;
+      importImportedCount.value = feedback.importedCount;
+      importFailedCount.value = feedback.failedCount;
+      importErrorVisible.value = true;
+      ElMessage.warning(`${riskSummaryTabNames[tab]}导入完成：成功 ${feedback.importedCount} 条，异常 ${feedback.failedCount} 条`);
+    } else {
+      ElMessage.success(
+        `${riskSummaryTabNames[tab]}已导入${feedback.importedCount ? `，共 ${feedback.importedCount} 条` : ''}`
+      );
+    }
+  } catch (error) {
+    ElMessage.error(`${riskSummaryTabNames[tab]}导入失败：${getErrorMessage(error, '请检查导入文件或接口服务')}`);
+  } finally {
+    importingTab.value = '';
+  }
+};
+
+const loadProjectRiskMatrix = async () => {
+  try {
+    const project = await projectApi.detail(projectId);
+    if (!project.riskMatrixId) {
+      projectRiskMatrix.value = {};
+      return;
+    }
+    const matrix = await knowledgeApi.detail<RiskMatrix>('matrix', project.riskMatrixId);
+    projectRiskMatrix.value = matrix.matrixJson || {};
+  } catch {
+    projectRiskMatrix.value = {};
+  }
+};
+
+const buildHarmSuggestionFromRow = (row: RiskItem): HarmAnalysisSuggestion | null => {
+  const cached = harmAnalysisSuggestions.value[row.id];
+  if (cached) return cached;
+  if (!hasHarmAnalysis(row)) return null;
+
+  return {
+    riskRecordId: row.id,
+    harmLevel: row.harmLevel || '-',
+    harmDescription: row.harmDescription || '',
+    harmImpactObject: row.harmImpactObject || '',
+    harmExample: row.harmExample || '',
+    harmAnalysisTrace: row.harmAnalysisTrace || {},
+    harmAnalysisConfidence: row.harmAnalysisConfidence,
+    harmAnalysisInputHash: row.harmAnalysisInputHash,
+    needsManualReview: row.harmAnalysisStatus === 'PENDING'
+  };
+};
+
+const openHarmAnalysisDetail = (row: RiskItem) => {
+  harmAnalysisRiskItemId.value = row.id;
+  harmAnalysisSuggestion.value = buildHarmSuggestionFromRow(row);
+  harmAnalysisVisible.value = true;
+};
+
+const suggestRowHarm = async (row: RiskItem) => {
+  harmAnalyzingId.value = row.id;
+  try {
+    const suggestion = await riskApi.suggestRiskItemHarm(projectId, row.id);
+    harmAnalysisSuggestions.value = { ...harmAnalysisSuggestions.value, [row.id]: suggestion };
+    harmAnalysisRiskItemId.value = row.id;
+    harmAnalysisSuggestion.value = suggestion;
+    harmAnalysisVisible.value = true;
+    ElMessage.success('已生成风险危害程度辅助判定建议');
+    await load();
+  } catch (error) {
+    ElMessage.error(`辅助判定失败：${getErrorMessage(error, '请稍后重试')}`);
+  } finally {
+    harmAnalyzingId.value = '';
+  }
+};
+
+const suggestCurrentPageHarm = async () => {
+  const targetRows = riskItems.value.filter((row) => row.harmAnalysisStatus !== 'CONFIRMED');
+  if (!targetRows.length) {
+    ElMessage.warning('当前页暂无待辅助判定的风险记录');
+    return;
+  }
+
+  batchAnalyzing.value = true;
+  try {
+    const suggestions = await riskApi.suggestRiskItemsHarm(projectId, {
+      riskItemIds: targetRows.map((row) => row.id),
+      limit: targetRows.length
+    });
+    harmAnalysisSuggestions.value = suggestions.reduce(
+      (result, suggestion) => ({ ...result, [suggestion.riskRecordId]: suggestion }),
+      { ...harmAnalysisSuggestions.value }
+    );
+    ElMessage.success(`已生成 ${suggestions.length} 条风险危害程度辅助判定建议`);
+    await load();
+  } catch (error) {
+    ElMessage.error(`批量辅助判定失败：${getErrorMessage(error, '请稍后重试')}`);
+  } finally {
+    batchAnalyzing.value = false;
+  }
+};
+
+const applyHarmAnalysis = async () => {
+  if (!harmAnalysisRiskItemId.value || !harmAnalysisSuggestion.value || isEmptyLevel(harmAnalysisSuggestion.value.harmLevel)) return;
+
+  harmApplying.value = true;
+  try {
+    await riskApi.applyRiskItemHarm(projectId, harmAnalysisRiskItemId.value, {
+      suggestion: harmAnalysisSuggestion.value
+    });
+    const nextSuggestions = { ...harmAnalysisSuggestions.value };
+    delete nextSuggestions[harmAnalysisRiskItemId.value];
+    harmAnalysisSuggestions.value = nextSuggestions;
+    harmAnalysisVisible.value = false;
+    ElMessage.success('已应用风险危害程度辅助判定结果');
+    await load();
+  } catch (error) {
+    ElMessage.error(`应用辅助判定失败：${getErrorMessage(error, '请重新生成建议后再试')}`);
+  } finally {
+    harmApplying.value = false;
+  }
+};
+
+const rowIndex = (tab: SummaryTab, index: number) => {
+  const page = pagination[tab];
+  return (page.pageNo - 1) * page.pageSize + index + 1;
+};
+
+const sourceIndex = (index: number) => rowIndex('sources', index);
+const itemIndex = (index: number) => rowIndex('items', index);
+const suggestionIndex = (index: number) => rowIndex('suggestions', index);
+
+const handlePageChange = (tab: SummaryTab) => {
+  if (activeTab.value === tab) load();
+};
+
+const handlePageSizeChange = (tab: SummaryTab) => {
+  pagination[tab].pageNo = 1;
+  if (activeTab.value === tab) load();
+};
+
+const load = async () => {
+  loading.value = true;
+  try {
+    const page = pagination[activeTab.value];
+    const query = { pageNo: page.pageNo, pageSize: page.pageSize };
+
+    if (activeTab.value === 'sources') {
+      const result = await riskApi.listRiskSources(projectId, query);
+      riskSources.value = result.list;
+      Object.assign(page, { pageNo: result.pageNo, pageSize: result.pageSize, total: result.total });
+    }
+    if (activeTab.value === 'items') {
+      const result = await riskApi.listRiskItems(projectId, query);
+      riskItems.value = result.list;
+      Object.assign(page, { pageNo: result.pageNo, pageSize: result.pageSize, total: result.total });
+    }
+    if (activeTab.value === 'suggestions') {
+      const result = await riskApi.listRiskSuggestions(projectId, query);
+      riskSuggestions.value = result.list;
+      Object.assign(page, { pageNo: result.pageNo, pageSize: result.pageSize, total: result.total });
+    }
+  } finally {
+    loading.value = false;
+  }
+};
+
+const refreshRisks = async () => {
+  try {
+    await ElMessageBox.confirm('刷新统计数据将重新汇总现场测评中基本符合和不符合的数据，是否覆盖未确认内容？', '刷新确认', {
+      type: 'warning',
+      confirmButtonText: '覆盖刷新',
+      cancelButtonText: '不覆盖'
+    });
+    await riskApi.refresh(projectId, true);
+    ElMessage.success('已刷新统计数据');
+    pagination[activeTab.value].pageNo = 1;
+    await load();
+  } catch {
+    await riskApi.refresh(projectId, false);
+    ElMessage.success('已刷新统计数据，未覆盖人工修改内容');
+    pagination[activeTab.value].pageNo = 1;
+    await load();
+  }
+};
+
+const openEdit = (row: RiskSource | RiskItem | RiskSuggestion) => {
+  editingId.value = row.id;
+  Object.keys(editForm).forEach((key) => delete editForm[key as keyof EditForm]);
+  Object.assign(editForm, JSON.parse(JSON.stringify(row)) as EditForm);
+  if (activeTab.value === 'items') {
+    editForm.riskLevel = calculateRiskLevel(editForm.possibilityLevel, editForm.harmLevel);
+  }
+  editVisible.value = true;
+};
+
+const saveEdit = async () => {
+  if (activeTab.value === 'sources') {
+    await riskApi.saveRiskSource(projectId, editingId.value, {
+      riskTypes: editForm.riskTypes || [],
+      riskDescription: editForm.riskDescription || '',
+      riskSourceDescription: editForm.riskSourceDescription || '',
+      relatedData: editForm.relatedData || '',
+      relatedActivities: editForm.relatedActivities || [],
+      sourceItem: editForm.sourceItem,
+      manualAdjusted: true
+    });
+  }
+  if (activeTab.value === 'items') {
+    await riskApi.saveRiskItem(projectId, editingId.value, {
+      harmLevel: editForm.harmLevel || '-',
+      possibilityLevel: editForm.possibilityLevel || '-',
+      riskLevel: linkedEditRiskLevel.value,
+      manualAdjusted: true
+    });
+  }
+  if (activeTab.value === 'suggestions') {
+    await riskApi.saveRiskSuggestion(projectId, editingId.value, {
+      remediationSuggestion: editForm.remediationSuggestion || '',
+      manualAdjusted: true
+    });
+  }
+  editVisible.value = false;
+  ElMessage.success('风险记录已保存');
+  await load();
+};
+
+onMounted(async () => {
+  await loadProjectRiskMatrix();
+  await load();
+});
+</script>
+
+<style scoped>
+.summary-tab-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.summary-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
+  overflow-x: auto;
+}
+
+.harm-section-title {
+  margin-bottom: 10px;
+  font-weight: 600;
+}
+
+.harm-trace {
+  margin-top: 16px;
+}
+
+.harm-trace ol {
+  padding-left: 20px;
+  margin: 8px 0 0;
+}
+
+.harm-trace li + li {
+  margin-top: 6px;
+}
+
+.harm-step-title {
+  display: block;
+  font-weight: 600;
+}
+
+.harm-step-extra {
+  margin-top: 8px;
+  padding: 10px 12px;
+  background: #f7f9fc;
+  border: 1px solid #e5eaf3;
+  border-radius: 6px;
+}
+
+.harm-step-extra-item + .harm-step-extra-item,
+.harm-step-extra-item + .harm-evidence {
+  margin-top: 8px;
+}
+
+.harm-step-extra-title {
+  display: block;
+  margin-bottom: 4px;
+  color: #303133;
+  font-weight: 600;
+}
+
+.harm-step-extra p {
+  margin: 0;
+  color: #606266;
+  line-height: 1.6;
+}
+
+.harm-step-list {
+  padding-left: 18px;
+  margin: 4px 0 0;
+  color: #606266;
+  line-height: 1.6;
+}
+
+.harm-step-list li + li {
+  margin-top: 4px;
+}
+
+.harm-evidence summary {
+  color: #303133;
+  cursor: pointer;
+  font-weight: 600;
+}
+</style>
