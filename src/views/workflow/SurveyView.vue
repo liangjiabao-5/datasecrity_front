@@ -4,10 +4,17 @@
 
     <div class="panel panel-pad survey-panel">
       <div class="workflow-panel-actions">
-        <el-upload :auto-upload="false" :show-file-list="false" accept=".json" :on-change="importCurrentTab">
-          <el-button :icon="Upload">导入</el-button>
+        <el-button :icon="Download" :loading="exportingTemplate" @click="downloadSurveyTemplate">下载模板</el-button>
+        <el-upload
+          :auto-upload="false"
+          :show-file-list="false"
+          accept=".docx"
+          :disabled="importingWord"
+          :on-change="importSurveyWord"
+        >
+          <el-button :icon="Upload" :loading="importingWord">导入</el-button>
         </el-upload>
-        <el-button :icon="Download" @click="exportCurrentTab">导出</el-button>
+        <el-button :icon="Download" :loading="exportingWord" @click="exportSurveyWord">导出</el-button>
         <el-button type="primary" @click="saveCurrentTab">保存</el-button>
         <el-button type="success" @click="router.push(`/projects/${projectId}/evaluation`)">下一步</el-button>
       </div>
@@ -244,34 +251,34 @@
               </div>
               <el-table :data="dataAssets" row-key="id" border>
                 <el-table-column prop="dataName" label="数据名称" min-width="130">
-                  <template #default="{ row }"><el-input v-model="row.dataName" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.dataName" /></template>
                 </el-table-column>
                 <el-table-column prop="dataForm" label="数据形态" min-width="120">
-                  <template #default="{ row }"><el-input v-model="row.dataForm" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.dataForm" /></template>
                 </el-table-column>
                 <el-table-column prop="dataScope" label="数据范围" min-width="120">
-                  <template #default="{ row }"><el-input v-model="row.dataScope" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.dataScope" /></template>
                 </el-table-column>
                 <el-table-column prop="dataScale" label="数据规模" min-width="120">
-                  <template #default="{ row }"><el-input v-model="row.dataScale" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.dataScale" /></template>
                 </el-table-column>
                 <el-table-column prop="dataSource" label="数据来源" min-width="130">
-                  <template #default="{ row }"><el-input v-model="row.dataSource" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.dataSource" /></template>
                 </el-table-column>
                 <el-table-column prop="storageLocation" label="数据存储分布情况" min-width="170">
-                  <template #default="{ row }"><el-input v-model="row.storageLocation" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.storageLocation" /></template>
                 </el-table-column>
                 <el-table-column prop="flowDescription" label="数据流转情况" min-width="170">
-                  <template #default="{ row }"><el-input v-model="row.flowDescription" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.flowDescription" /></template>
                 </el-table-column>
                 <el-table-column label="是否进行分类分级" min-width="150">
                   <template #default="{ row }"><el-switch v-model="row.classified" active-text="是" inactive-text="否" /></template>
                 </el-table-column>
                 <el-table-column prop="dataCategory" label="数据类别" min-width="130">
-                  <template #default="{ row }"><el-input v-model="row.dataCategory" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.dataCategory" /></template>
                 </el-table-column>
                 <el-table-column prop="dataLevel" label="数据级别" min-width="120">
-                  <template #default="{ row }"><el-input v-model="row.dataLevel" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.dataLevel" /></template>
                 </el-table-column>
                 <el-table-column label="是否为个人信息" min-width="140">
                   <template #default="{ row }"><el-switch v-model="row.personalInfo" active-text="是" inactive-text="否" /></template>
@@ -294,22 +301,22 @@
               </div>
               <el-table :data="personalInfoRows" row-key="id" border>
                 <el-table-column prop="dataName" label="数据名称" min-width="150">
-                  <template #default="{ row }"><el-input v-model="row.dataName" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.dataName" /></template>
                 </el-table-column>
                 <el-table-column prop="dataCategory" label="个人信息类别" min-width="160">
-                  <template #default="{ row }"><el-input v-model="row.dataCategory" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.dataCategory" /></template>
                 </el-table-column>
                 <el-table-column prop="scale" label="规模" min-width="130">
-                  <template #default="{ row }"><el-input v-model="row.scale" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.scale" /></template>
                 </el-table-column>
                 <el-table-column prop="sensitivity" label="敏感程度" min-width="140">
-                  <template #default="{ row }"><el-input v-model="row.sensitivity" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.sensitivity" /></template>
                 </el-table-column>
                 <el-table-column prop="dataSource" label="数据来源" min-width="140">
-                  <template #default="{ row }"><el-input v-model="row.dataSource" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.dataSource" /></template>
                 </el-table-column>
                 <el-table-column prop="businessFlow" label="业务流转情况" min-width="170">
-                  <template #default="{ row }"><el-input v-model="row.businessFlow" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.businessFlow" /></template>
                 </el-table-column>
                 <el-table-column label="操作" width="100" fixed="right">
                   <template #default="{ row }">
@@ -329,19 +336,19 @@
               </div>
               <el-table :data="importantDataRows" row-key="id" border>
                 <el-table-column prop="dataName" label="数据名称" min-width="160">
-                  <template #default="{ row }"><el-input v-model="row.dataName" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.dataName" /></template>
                 </el-table-column>
                 <el-table-column prop="dataCategory" label="重要数据类别" min-width="160">
-                  <template #default="{ row }"><el-input v-model="row.dataCategory" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.dataCategory" /></template>
                 </el-table-column>
                 <el-table-column prop="scale" label="规模" min-width="140">
-                  <template #default="{ row }"><el-input v-model="row.scale" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.scale" /></template>
                 </el-table-column>
                 <el-table-column prop="dataSource" label="数据来源" min-width="160">
-                  <template #default="{ row }"><el-input v-model="row.dataSource" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.dataSource" /></template>
                 </el-table-column>
                 <el-table-column prop="businessFlow" label="业务流转情况" min-width="180">
-                  <template #default="{ row }"><el-input v-model="row.businessFlow" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.businessFlow" /></template>
                 </el-table-column>
                 <el-table-column label="操作" width="100" fixed="right">
                   <template #default="{ row }">
@@ -358,19 +365,19 @@
               </div>
               <el-table :data="coreDataRows" row-key="id" border>
                 <el-table-column prop="dataName" label="数据名称" min-width="160">
-                  <template #default="{ row }"><el-input v-model="row.dataName" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.dataName" /></template>
                 </el-table-column>
                 <el-table-column prop="dataCategory" label="核心数据类别" min-width="160">
-                  <template #default="{ row }"><el-input v-model="row.dataCategory" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.dataCategory" /></template>
                 </el-table-column>
                 <el-table-column prop="scale" label="规模" min-width="140">
-                  <template #default="{ row }"><el-input v-model="row.scale" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.scale" /></template>
                 </el-table-column>
                 <el-table-column prop="dataSource" label="数据来源" min-width="160">
-                  <template #default="{ row }"><el-input v-model="row.dataSource" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.dataSource" /></template>
                 </el-table-column>
                 <el-table-column prop="businessFlow" label="业务流转情况" min-width="180">
-                  <template #default="{ row }"><el-input v-model="row.businessFlow" /></template>
+                  <template #default="{ row }"><CompactCellInput v-model="row.businessFlow" /></template>
                 </el-table-column>
                 <el-table-column label="操作" width="100" fixed="right">
                   <template #default="{ row }">
@@ -462,6 +469,25 @@
         </el-tab-pane>
       </el-tabs>
     </div>
+
+    <el-dialog v-model="importErrorVisible" title="信息调研导入异常明细" width="860px">
+      <el-alert
+        :title="importErrorMessage"
+        type="warning"
+        show-icon
+        :closable="false"
+        style="margin-bottom: 16px"
+      />
+      <el-table :data="importErrorRows" border max-height="420" empty-text="接口未返回异常明细">
+        <el-table-column prop="tableName" label="表格" width="160" show-overflow-tooltip />
+        <el-table-column prop="rowNo" label="行号" width="90" />
+        <el-table-column prop="field" label="字段" width="160" show-overflow-tooltip />
+        <el-table-column prop="reason" label="原因" min-width="360" show-overflow-tooltip />
+      </el-table>
+      <template #footer>
+        <el-button type="primary" @click="importErrorVisible = false">知道了</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
@@ -485,8 +511,11 @@ import type {
   SpecialDataType
 } from '@/types/survey';
 import type { ApiError } from '@/types/api';
-import { exportJsonFile, readJsonFile } from '@/utils/fileActions';
+import CompactCellInput from '@/components/CompactCellInput.vue';
+import { downloadBlobFile } from '@/utils/fileActions';
 import { emptyBusinessSystemForm, normalizeBusinessSystemForForm } from '@/utils/surveyBusinessSystem';
+import { normalizeSurveyWordImportError } from '@/utils/surveyWordImportResult';
+import type { SurveyWordImportError } from '@/utils/surveyWordImportResult';
 
 type SurveyTabKey = 'processor' | 'business' | 'assets' | 'processing' | 'security';
 type Option = { label: string; value: string };
@@ -509,16 +538,6 @@ type SecuritySection = {
   note?: string;
   fields: TextField[];
 };
-type SurveyImportPayload = {
-  processorBasic?: Partial<DataProcessorBasicSurvey>;
-  business?: Partial<BusinessSystem>;
-  dataAssets?: DataAsset[];
-  personalInfo?: SpecialDataRecord[];
-  importantData?: SpecialDataRecord[];
-  coreData?: SpecialDataRecord[];
-  processing?: Partial<ProcessingActivitySurvey>;
-  security?: SecurityProtection;
-};
 type DiagramUploadType = 'topology' | 'dataFlow';
 
 const route = useRoute();
@@ -526,6 +545,12 @@ const router = useRouter();
 const projectId = String(route.params.projectId || '');
 const activeTab = ref<SurveyTabKey>('processor');
 const loading = ref(false);
+const exportingTemplate = ref(false);
+const importingWord = ref(false);
+const exportingWord = ref(false);
+const importErrorVisible = ref(false);
+const importErrorMessage = ref('');
+const importErrorRows = ref<SurveyWordImportError[]>([]);
 
 const processorBasicForm = reactive<DataProcessorBasicSurvey>(emptyDataProcessorBasic());
 const businessId = ref('');
@@ -1002,6 +1027,21 @@ async function load() {
   }
 }
 
+async function loadAllSurveyTabs() {
+  loading.value = true;
+  try {
+    await Promise.all([
+      loadProcessorBasic(),
+      loadBusiness(),
+      loadAssets(),
+      loadProcessing(),
+      loadSecurity()
+    ]);
+  } finally {
+    loading.value = false;
+  }
+}
+
 async function loadProcessorBasic() {
   Object.assign(processorBasicForm, emptyDataProcessorBasic(), await surveyApi.getDataProcessorBasic(projectId));
 }
@@ -1037,6 +1077,9 @@ async function loadProcessing() {
 }
 
 async function loadSecurity() {
+  Object.keys(security).forEach((key) => {
+    delete security[key];
+  });
   Object.assign(security, await surveyApi.getSecurityProtection(projectId));
 }
 
@@ -1121,55 +1164,73 @@ async function saveCurrentTab() {
   if (activeTab.value === 'security') await saveSecurity();
 }
 
-function exportCurrentTab() {
-  const payload: SurveyImportPayload = {};
-  if (activeTab.value === 'processor') payload.processorBasic = processorBasicForm;
-  if (activeTab.value === 'business') payload.business = { id: businessId.value, ...businessForm };
-  if (activeTab.value === 'assets') {
-    payload.dataAssets = dataAssets.value;
-    payload.personalInfo = personalInfoRows.value;
-    payload.importantData = importantDataRows.value;
-    payload.coreData = coreDataRows.value;
+const getErrorMessage = (error: unknown, fallback: string) => {
+  if (error && typeof error === 'object' && 'message' in error) {
+    const message = (error as { message?: unknown }).message;
+    if (typeof message === 'string' && message.trim()) return message;
   }
-  if (activeTab.value === 'processing') payload.processing = processingSurvey;
-  if (activeTab.value === 'security') payload.security = security;
-  exportJsonFile(`信息调研-${activeTab.value}-${projectId}.json`, payload);
-  ElMessage.success('当前标签页数据已导出');
+  return fallback;
+};
+
+async function downloadSurveyTemplate() {
+  exportingTemplate.value = true;
+  try {
+    const { blob, fileName } = await surveyApi.exportTemplate(projectId);
+    downloadBlobFile(fileName || `信息调研导入模板-${projectId}.docx`, blob);
+    ElMessage.success('信息调研导入模板已下载');
+  } catch (error) {
+    ElMessage.error(`信息调研导入模板下载失败：${getErrorMessage(error, '请稍后重试')}`);
+  } finally {
+    exportingTemplate.value = false;
+  }
 }
 
-async function importCurrentTab(file: UploadFile) {
+function isDocxFile(file: UploadFile) {
+  const name = (file.name || file.raw?.name || '').toLowerCase();
+  return name.endsWith('.docx');
+}
+
+async function importSurveyWord(file: UploadFile) {
   if (!file.raw) return;
-  const payload = await readJsonFile<SurveyImportPayload>(file.raw);
-  if (activeTab.value === 'processor' && payload.processorBasic) {
-    Object.assign(processorBasicForm, emptyDataProcessorBasic(), payload.processorBasic);
+  if (!isDocxFile(file)) {
+    ElMessage.error('导入文件必须是 .docx 格式');
+    return;
   }
-  if (activeTab.value === 'business' && payload.business) {
-    const { id, ...business } = payload.business;
-    businessId.value = id || businessId.value;
-    Object.assign(businessForm, normalizeBusinessSystemForForm(business));
-    syncDiagramDownloadUrls();
+
+  importingWord.value = true;
+  try {
+    await surveyApi.importWord(projectId, file.raw);
+    try {
+      await loadAllSurveyTabs();
+    } catch (refreshError) {
+      ElMessage.warning(`信息调研 Word 导入成功，但页面刷新失败：${getErrorMessage(refreshError, '请手动刷新页面')}`);
+      return;
+    }
+    ElMessage.success('信息调研 Word 导入成功');
+  } catch (error) {
+    const feedback = normalizeSurveyWordImportError(error);
+    importErrorMessage.value = feedback.message;
+    importErrorRows.value = feedback.errors;
+    if (feedback.hasErrors) {
+      importErrorVisible.value = true;
+    }
+    ElMessage.error(`信息调研 Word 导入失败：${feedback.message}`);
+  } finally {
+    importingWord.value = false;
   }
-  if (activeTab.value === 'assets') {
-    dataAssets.value = normalizeDataAssetRows(payload.dataAssets || []);
-    personalInfoRows.value = normalizeSpecialRows(payload.personalInfo || [], 'personal-info');
-    importantDataRows.value = normalizeSpecialRows(payload.importantData || [], 'important-data');
-    coreDataRows.value = normalizeSpecialRows(payload.coreData || [], 'core-data');
-  }
-  if (activeTab.value === 'processing' && payload.processing) {
-    Object.assign(processingSurvey, emptyProcessingSurvey(), payload.processing);
-  }
-  if (activeTab.value === 'security' && payload.security) {
-    Object.assign(security, payload.security);
-  }
-  ElMessage.success('当前标签页数据已导入，请保存后生效');
 }
 
-function normalizeDataAssetRows(rows: DataAsset[]) {
-  return rows.map((row) => ({ ...emptyDataAsset(), ...row, id: row.id || temporaryId('asset') }));
-}
-
-function normalizeSpecialRows(rows: SpecialDataRecord[], type: SpecialDataType) {
-  return rows.map((row) => ({ ...emptySpecialRecord(type), ...row, id: row.id || temporaryId(type) }));
+async function exportSurveyWord() {
+  exportingWord.value = true;
+  try {
+    const { blob, fileName } = await surveyApi.exportWord(projectId);
+    downloadBlobFile(fileName || `信息调研-${projectId}.docx`, blob);
+    ElMessage.success('信息调研 Word 已导出');
+  } catch (error) {
+    ElMessage.error(`信息调研 Word 导出失败：${getErrorMessage(error, '请稍后重试')}`);
+  } finally {
+    exportingWord.value = false;
+  }
 }
 
 watch(() => [...processingSurvey.involvedActivities], clearDisabledProcessingSections);

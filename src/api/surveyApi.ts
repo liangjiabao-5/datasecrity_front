@@ -9,7 +9,8 @@ import type {
   ProcessingActivitySurvey,
   SecurityProtection,
   SpecialDataRecord,
-  SpecialDataType
+  SpecialDataType,
+  SurveyWordImportResult
 } from '@/types/survey';
 import { useMock } from '@/utils/env';
 import { http } from '@/utils/request';
@@ -96,6 +97,11 @@ const emptyDataProcessorBasic = (): DataProcessorBasicSurvey => ({
   administrativeLicense: ''
 });
 
+const wordBlob = (payload: unknown) =>
+  new Blob([JSON.stringify(payload, null, 2)], {
+    type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
+  });
+
 const legacyActivitiesToSurvey = (activities: ProcessingActivity[]): ProcessingActivitySurvey => {
   const survey = emptyProcessingSurvey();
   survey.involvedActivities = [...new Set(activities.map((item) => item.activityType))];
@@ -132,6 +138,43 @@ const surveyToLegacyActivity = (payload: ProcessingActivitySurvey): Omit<Process
 });
 
 export const surveyApi = {
+  exportTemplate(projectId: string): Promise<{ blob: Blob; fileName?: string }> {
+    if (useMock) {
+      return Promise.resolve({
+        blob: wordBlob({ projectId, template: '附录A（资料性）调研表格.docx' }),
+        fileName: `信息调研导入模板-${projectId}.docx`
+      });
+    }
+    return http.blobFile(`/projects/${projectId}/survey/export-template`, { timeout: 60000 });
+  },
+  exportWord(projectId: string): Promise<{ blob: Blob; fileName?: string }> {
+    if (useMock) {
+      return Promise.resolve({
+        blob: wordBlob({ projectId, export: '信息调研Word导出' }),
+        fileName: `信息调研-${projectId}.docx`
+      });
+    }
+    return http.blobFile(`/projects/${projectId}/survey/export`, { timeout: 60000 });
+  },
+  importWord(projectId: string, file: File): Promise<SurveyWordImportResult> {
+    if (useMock) {
+      return Promise.resolve({
+        counts: {
+          dataAssets: 0,
+          personalInfo: 0,
+          importantData: 0,
+          coreData: 0
+        }
+      });
+    }
+
+    const formData = new FormData();
+    formData.append('file', file);
+    return http.post<SurveyWordImportResult>(`/projects/${projectId}/survey/import`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+      timeout: 60000
+    });
+  },
   getDataProcessorBasic(projectId: string): Promise<DataProcessorBasicSurvey> {
     if (useMock) return workflowDb.getDataProcessorBasic(projectId);
     return http

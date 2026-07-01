@@ -33,7 +33,7 @@
       <el-col :xs="24" :lg="18">
         <div class="filter-bar">
           <el-input v-model="query.keyword" clearable placeholder="检查编号、要点、内容关键词" style="max-width: 280px" @keyup.enter="reloadFirstPage" />
-          <el-select v-model="query.result" clearable placeholder="符合情况" style="width: 160px">
+          <el-select v-model="query.results" multiple collapse-tags clearable placeholder="符合情况" style="width: 240px">
             <el-option v-for="item in resultOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
           <el-button type="primary" :icon="Search" @click="reloadFirstPage">查询</el-button>
@@ -201,12 +201,12 @@ type DirectoryNode = {
 const query = reactive<{
   pageNo: number;
   pageSize: number;
-  result?: EvaluationResult;
+  results: EvaluationResult[];
   keyword?: string;
 }>({
   pageNo: 1,
   pageSize: 10,
-  result: undefined,
+  results: [],
   keyword: ''
 });
 
@@ -267,7 +267,7 @@ const matchesSelectedDirectory = (row: EvaluationItem) =>
 const buildItemQuery = (pageNo = query.pageNo, pageSize = query.pageSize): EvaluationItemQuery => ({
   pageNo,
   pageSize,
-  result: query.result,
+  results: query.results.length ? query.results : undefined,
   keyword: query.keyword || undefined,
   sheet_name: selectedSheetName.value || undefined,
   sheetName: selectedSheetName.value || undefined,
@@ -325,7 +325,7 @@ const reloadFirstPage = () => {
 
 const reset = () => {
   query.keyword = '';
-  query.result = undefined;
+  query.results = [];
   selectedSheetName.value = '';
   selectedCategory.value = '';
   catalogTreeRef.value?.setCurrentKey();

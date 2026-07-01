@@ -35,6 +35,7 @@ service.interceptors.response.use(
     return Promise.reject({
       code: payload?.code || String(status || 'NETWORK_ERROR'),
       message,
+      data: payload?.data,
       traceId: payload?.traceId
     } satisfies ApiError);
   }
@@ -48,12 +49,28 @@ const unwrap = <T>(response: AxiosResponse<ApiResponse<T> | T>): T => {
       throw {
         code: apiPayload.code,
         message: apiPayload.message || '请求失败',
+        data: apiPayload.data,
         traceId: apiPayload.traceId
       } satisfies ApiError;
     }
     return apiPayload.data;
   }
   return payload as T;
+};
+
+const parseContentDispositionFileName = (header?: string): string | undefined => {
+  if (!header) return undefined;
+  const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
+  if (utf8Match?.[1]) {
+    try {
+      return decodeURIComponent(utf8Match[1].trim());
+    } catch {
+      return utf8Match[1].trim();
+    }
+  }
+
+  const asciiMatch = header.match(/filename="?([^";]+)"?/i);
+  return asciiMatch?.[1]?.trim();
 };
 
 export const http = {
@@ -76,5 +93,16 @@ export const http = {
         responseType: 'blob'
       })
       .then((response) => response.data);
+  },
+  blobFile(url: string, config?: AxiosRequestConfig): Promise<{ blob: Blob; fileName?: string }> {
+    return service
+      .get<Blob>(url, {
+        ...config,
+        responseType: 'blob'
+      })
+      .then((response) => ({
+        blob: response.data,
+        fileName: parseContentDispositionFileName(response.headers['content-disposition'])
+      }));
   }
 };

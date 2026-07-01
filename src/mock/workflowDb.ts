@@ -807,11 +807,12 @@ export const workflowDb = {
     const all = ensure(evaluationItems, projectId, []);
     const keyword = params.keyword?.trim().toLowerCase();
     const sheetName = params.sheet_name || params.sheetName;
+    const results = params.results?.length ? params.results : params.result ? [params.result] : [];
     const filtered = all
       .filter((item) => !params.categoryId || item.categoryId === params.categoryId)
       .filter((item) => !sheetName || (item.sheet_name || item.sheetName) === sheetName)
       .filter((item) => !params.category || (item.category || item.categoryName) === params.category)
-      .filter((item) => !params.result || item.evaluationResult === params.result)
+      .filter((item) => !results.length || results.includes(item.evaluationResult))
       .filter(
         (item) =>
           !keyword ||

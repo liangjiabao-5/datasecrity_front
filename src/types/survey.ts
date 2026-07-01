@@ -48,6 +48,19 @@ export interface BusinessSystemDiagramUploadResult {
   businessSystem: Pick<BusinessSystem, 'id' | 'topologyFileId' | 'businessFlowFileId'>;
 }
 
+export interface SurveyWordImportResult {
+  dataProcessorBasic?: Partial<DataProcessorBasicSurvey>;
+  businessSystem?: Partial<BusinessSystem>;
+  processingActivity?: Partial<ProcessingActivitySurvey>;
+  securityProtection?: Partial<SecurityProtection>;
+  counts?: {
+    dataAssets?: number;
+    personalInfo?: number;
+    importantData?: number;
+    coreData?: number;
+  };
+}
+
 export interface DataAsset {
   id: string;
   businessSystemId: string;

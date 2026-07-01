@@ -30,6 +30,7 @@ export interface EvaluationItemQuery {
   sheetName?: string;
   category?: string;
   result?: EvaluationResult;
+  results?: EvaluationResult[];
   keyword?: string;
 }
 
