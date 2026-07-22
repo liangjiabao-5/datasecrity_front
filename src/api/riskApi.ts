@@ -4,9 +4,15 @@ import type {
   HarmAnalysisApplyPayload,
   HarmAnalysisBatchPayload,
   HarmAnalysisSuggestion,
+  RiskFormOptions,
   RiskItem,
+  RiskItemSavePayload,
+  RiskSummaryMergeState,
+  RiskSummaryMergeUpdateResult,
   RiskSource,
-  RiskSuggestion
+  RiskSourceSavePayload,
+  RiskSuggestion,
+  RiskSuggestionSavePayload
 } from '@/types/risk';
 import { useMock } from '@/utils/env';
 import { http } from '@/utils/request';
@@ -120,6 +126,29 @@ export const riskApi = {
     if (useMock) return workflowDb.refreshRisks(projectId, overwriteManualChanges);
     return http.post(`/projects/${projectId}/risk-summary/refresh`, { overwriteManualChanges });
   },
+  formOptions(projectId: string): Promise<RiskFormOptions> {
+    if (useMock) return workflowDb.getRiskFormOptions(projectId);
+    return http.get<RiskFormOptions>(`/projects/${projectId}/risk-form-options`);
+  },
+  getMergeStatus(projectId: string): Promise<RiskSummaryMergeState> {
+    if (useMock) return workflowDb.getRiskSummaryMerge(projectId);
+    return http.get<RiskSummaryMergeState>(`/projects/${projectId}/risk-summary/merge`);
+  },
+  setMergeStatus(projectId: string, mergeEnabled: boolean): Promise<RiskSummaryMergeState> {
+    if (useMock) return workflowDb.setRiskSummaryMerge(projectId, mergeEnabled);
+    return http.put<RiskSummaryMergeState>(`/projects/${projectId}/risk-summary/merge`, { mergeEnabled });
+  },
+  async updateMergeData(projectId: string): Promise<RiskSummaryMergeUpdateResult> {
+    if (useMock) return workflowDb.updateRiskSummaryMerge(projectId);
+    const response = await http.postEnvelope<Omit<RiskSummaryMergeUpdateResult, 'message'>>(
+      `/projects/${projectId}/risk-summary/merge/update`,
+      {}
+    );
+    return {
+      ...response.data,
+      message: response.message || '更新合并数据成功'
+    };
+  },
   listRiskSources(projectId: string, query?: Partial<RiskPageQuery>): Promise<PageResult<RiskSource>> {
     const pageQuery = resolveQuery(query);
     if (useMock) return workflowDb.listRiskSources(projectId, pageQuery);
@@ -130,7 +159,7 @@ export const riskApi = {
         return { ...page, list: page.list.map(normalizeRiskSource) };
       });
   },
-  saveRiskSource(projectId: string, id: string, payload: Partial<Omit<RiskSource, 'id'>>): Promise<void> {
+  saveRiskSource(projectId: string, id: string, payload: RiskSourceSavePayload): Promise<void> {
     if (useMock) return workflowDb.saveRiskSource(projectId, id, payload);
     return http.put(`/projects/${projectId}/risk-sources/${id}`, payload);
   },
@@ -160,7 +189,7 @@ export const riskApi = {
         return { ...page, list: page.list.map(normalizeRiskItem) };
       });
   },
-  saveRiskItem(projectId: string, id: string, payload: Partial<Omit<RiskItem, 'id'>>): Promise<void> {
+  saveRiskItem(projectId: string, id: string, payload: RiskItemSavePayload): Promise<void> {
     if (useMock) return workflowDb.saveRiskItem(projectId, id, payload);
     return http.put(`/projects/${projectId}/risk-items/${id}`, payload);
   },
@@ -204,7 +233,7 @@ export const riskApi = {
         return { ...page, list: page.list.map(normalizeRiskSuggestion) };
       });
   },
-  saveRiskSuggestion(projectId: string, id: string, payload: Partial<Omit<RiskSuggestion, 'id'>>): Promise<void> {
+  saveRiskSuggestion(projectId: string, id: string, payload: RiskSuggestionSavePayload): Promise<void> {
     if (useMock) return workflowDb.saveRiskSuggestion(projectId, id, payload);
     return http.put(`/projects/${projectId}/risk-suggestions/${id}`, payload);
   }

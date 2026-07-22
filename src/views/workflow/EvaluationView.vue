@@ -32,7 +32,7 @@
 
       <el-col :xs="24" :lg="18">
         <div class="filter-bar">
-          <el-input v-model="query.keyword" clearable placeholder="检查编号、要点、内容关键词" style="max-width: 280px" @keyup.enter="reloadFirstPage" />
+          <el-input v-model="query.keyword" clearable placeholder="检查编号、评估项ID、要点、内容关键词" style="max-width: 280px" @keyup.enter="reloadFirstPage" />
           <el-select v-model="query.results" multiple collapse-tags clearable placeholder="符合情况" style="width: 240px">
             <el-option v-for="item in resultOptions" :key="item.value" :label="item.label" :value="item.value" />
           </el-select>
@@ -53,6 +53,12 @@
         <div class="panel table-panel">
           <el-table v-loading="loading" :data="items" border row-key="id" @selection-change="selectedRows = $event">
             <el-table-column type="selection" width="48" />
+            <el-table-column label="检查项编号" width="110">
+              <template #default="{ row }">{{ getItemCode(row) }}</template>
+            </el-table-column>
+            <el-table-column label="评估项ID" width="120">
+              <template #default="{ row }">{{ formatAssessmentItemId(row.assessmentItemId) }}</template>
+            </el-table-column>
             <el-table-column label="分类" width="150">
               <template #default="{ row }">{{ getSubcategoryLabel(row) }}</template>
             </el-table-column>
@@ -224,6 +230,10 @@ const resultOptions: Array<{ label: string; value: EvaluationResult }> = [
 ];
 
 const directoryPageSize = 200;
+
+const formatAssessmentItemId = (value?: string | null) => (value?.trim() ? value.trim() : '-');
+
+const getItemCode = (row: EvaluationItem) => row.itemCode || row.code || '-';
 
 const directoryKey = (level: DirectoryNode['level'], sheetName: string, category?: string) =>
   [level, sheetName, category || ''].map((value) => encodeURIComponent(value)).join(':');

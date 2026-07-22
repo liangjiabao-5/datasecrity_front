@@ -9,6 +9,8 @@ export interface EvaluationCatalogNode {
 export interface EvaluationItem {
   id: string;
   code: string;
+  itemCode?: string;
+  assessmentItemId?: string | null;
   categoryId: string;
   categoryName: string;
   sheet_name?: string;

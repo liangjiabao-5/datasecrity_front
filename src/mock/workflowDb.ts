@@ -25,9 +25,15 @@ import type {
   HarmAnalysisSuggestion,
   HarmAnalysisTrace,
   RiskItem,
+  RiskItemSavePayload,
+  RiskSummaryMergeState,
+  RiskSummaryMergeUpdateResult,
   RiskSource,
-  RiskSuggestion
+  RiskSourceSavePayload,
+  RiskSuggestion,
+  RiskSuggestionSavePayload
 } from '@/types/risk';
+import { processingActivityLabels } from '@/utils/labels';
 import { calculateRiskLevelByMatrix } from '@/utils/riskMatrix';
 import { mockDb } from './db';
 import { knowledgeDb } from './knowledgeDb';
@@ -334,6 +340,8 @@ const evaluationItems: Record<string, EvaluationItem[]> = {
     {
       id: 'item-001',
       code: 'DS-01',
+      itemCode: 'DS-01',
+      assessmentItemId: 'AQGL001',
       categoryId: 'mgmt-policy',
       sheet_name: '数据安全管理',
       sheetName: '数据安全管理',
@@ -348,6 +356,8 @@ const evaluationItems: Record<string, EvaluationItem[]> = {
     {
       id: 'item-002',
       code: 'DS-02',
+      itemCode: 'DS-02',
+      assessmentItemId: 'SJCL001',
       categoryId: 'activity-collect',
       sheet_name: '数据处理活动',
       sheetName: '数据处理活动',
@@ -362,6 +372,8 @@ const evaluationItems: Record<string, EvaluationItem[]> = {
     {
       id: 'item-003',
       code: 'DS-03',
+      itemCode: 'DS-03',
+      assessmentItemId: 'AQJS077',
       categoryId: 'activity-store',
       sheet_name: '数据处理活动',
       sheetName: '数据处理活动',
@@ -382,13 +394,16 @@ type RiskSourceTemplate = {
   category: string;
   subcategory: string;
   checkPoint: string;
+  assessmentSubcategory: string;
   riskDescription: string;
   remediationSuggestion: string;
   riskSourceDescription: string;
+  riskSourceType: string;
   riskTypes: string[];
 };
 
 let riskRecords: Record<string, RiskRecord[]> = {};
+let riskSummaryMergeStates: Record<string, boolean> = {};
 
 const riskSourceTemplates: RiskSourceTemplate[] = [
   {
@@ -396,9 +411,11 @@ const riskSourceTemplates: RiskSourceTemplate[] = [
     category: '数据安全制度体系建设情况',
     subcategory: '制度与策略',
     checkPoint: '数据安全总体策略',
+    assessmentSubcategory: '数据安全制度体系',
     riskDescription: '数据安全总体策略缺失或发布不充分，可能导致数据安全管理目标、职责和控制要求不清晰。',
     remediationSuggestion: '制定并发布数据安全总体策略，明确方针、目标、原则和管理责任，并定期评审更新。',
     riskSourceDescription: '未形成正式发布的数据安全总体策略或配套管理要求。',
+    riskSourceType: '数据安全制度流程存在缺陷',
     riskTypes: ['DATA_LEAKAGE', 'DATA_ABUSE']
   },
   {
@@ -406,9 +423,11 @@ const riskSourceTemplates: RiskSourceTemplate[] = [
     category: '数据收集',
     subcategory: '收集规则',
     checkPoint: '收集最小必要',
+    assessmentSubcategory: '数据收集规则',
     riskDescription: '数据收集未完全满足最小必要原则，可能造成超范围收集和合规风险。',
     remediationSuggestion: '梳理各业务场景的数据收集目的和字段必要性，清理非必要字段并补充告知说明。',
     riskSourceDescription: '部分收集场景未说明字段必要性或收集目的。',
+    riskSourceType: '数据处理活动规则存在缺陷',
     riskTypes: ['OVER_SCOPE_PROCESSING']
   }
 ];
@@ -433,6 +452,146 @@ const inferRelatedActivities = (item: EvaluationItem): string[] => {
   if (text.includes('公开')) activities.push('PUBLIC');
   if (text.includes('删除') || text.includes('销毁')) activities.push('DELETE');
   return activities.length ? activities : ['STORE'];
+};
+
+const defaultRelatedActivityOptions = ['收集', '传输', '存储', '使用和加工', '提供', '公开', '删除'];
+
+const relatedDataOptionSeeds = ['个人信息-联系方式/L2', '交易数据/L3'];
+
+const normalizeRelatedDataPayload = (value: unknown) => {
+  if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean).join('、');
+  return value;
+};
+
+const normalizeRiskSourcePayload = (payload: RiskSourceSavePayload): Partial<Omit<RiskSource, 'id'>> => {
+  const { relatedData, ...restPayload } = payload;
+  const nextPayload: Partial<Omit<RiskSource, 'id'>> = { ...restPayload };
+  if ('relatedData' in payload) {
+    nextPayload.relatedData = normalizeRelatedDataPayload(relatedData) as string;
+  }
+  return nextPayload;
+};
+
+const normalizeMergeText = (value?: string | null) => String(value || '').trim();
+const normalizeMergeArray = (value?: string[]) => (value || []).map(normalizeMergeText).filter(Boolean).sort();
+const joinUnique = (values: Array<string | null | undefined>, separator = '、') =>
+  Array.from(new Set(values.map(normalizeMergeText).filter(Boolean))).join(separator);
+const joinUniqueLines = (values: Array<string | null | undefined>) => joinUnique(values, '\n');
+
+const buildRiskMergeKey = (record: RiskRecord) =>
+  JSON.stringify({
+    assessmentCategory: normalizeMergeText(record.assessmentCategory),
+    assessmentSubcategory: normalizeMergeText(record.assessmentSubcategory),
+    riskTypes: normalizeMergeArray(record.riskTypes),
+    riskSourceType: normalizeMergeText(record.riskSourceType),
+    relatedActivities: normalizeMergeArray(record.relatedActivities),
+    relatedData: normalizeMergeText(record.relatedData)
+  });
+
+type MergeConflictFieldCode = 'harmLevel' | 'possibilityLevel' | 'riskLevel' | 'remediationSuggestion';
+
+const mergeConflictFieldLabels: Record<MergeConflictFieldCode, { tab: string; field: string }> = {
+  harmLevel: { tab: '数据安全风险清单', field: '危害程度' },
+  possibilityLevel: { tab: '数据安全风险清单', field: '发生可能性' },
+  riskLevel: { tab: '数据安全风险清单', field: '风险等级' },
+  remediationSuggestion: { tab: '数据安全风险处置建议', field: '整改建议' }
+};
+
+const validateRiskMergeRequiredFields = (records: RiskRecord[]): number[] =>
+  records
+    .map((record, index) => {
+      const missingRelatedData = !normalizeMergeText(record.relatedData) || normalizeMergeText(record.relatedData) === '-';
+      const missingRelatedActivities = !record.relatedActivities?.length;
+      return missingRelatedData || missingRelatedActivities ? index + 1 : 0;
+    })
+    .filter(Boolean);
+
+const buildRiskMergeRequiredFieldsError = (errors: number[]) => ({
+  code: 'RISK_MERGE_REQUIRED_FIELDS_MISSING',
+  message: `第${errors.join('、')}行需填写完整后再进行合并`,
+  data: {
+    rowNos: errors.map((rowNo) => String(rowNo)).join('、')
+  }
+});
+
+const hasDifferentMergeFieldValue = (group: RiskRecord[], field: MergeConflictFieldCode) =>
+  new Set(group.map((record) => normalizeMergeText(String(record[field] || '')))).size > 1;
+
+const getMergeConflictFields = (group: RiskRecord[]): MergeConflictFieldCode[] =>
+  (['harmLevel', 'possibilityLevel', 'riskLevel', 'remediationSuggestion'] as MergeConflictFieldCode[]).filter((field) =>
+    hasDifferentMergeFieldValue(group, field)
+  );
+
+const buildMergeConflictTabs = (records: RiskRecord[]) => {
+  const fieldCodes = Array.from(new Set(records.flatMap((record) => record.mergeConflictFields || []))) as MergeConflictFieldCode[];
+  return ['数据安全风险清单', '数据安全风险处置建议']
+    .map((tab) => {
+      const tabFieldCodes = fieldCodes.filter((fieldCode) => mergeConflictFieldLabels[fieldCode]?.tab === tab);
+      return {
+        tab,
+        fields: tabFieldCodes.map((fieldCode) => mergeConflictFieldLabels[fieldCode].field),
+        fieldCodes: tabFieldCodes
+      };
+    })
+    .filter((item) => item.fieldCodes.length);
+};
+
+const buildMergeUpdateMessage = (hasMergeConflict: boolean, mergeConflictTabs: ReturnType<typeof buildMergeConflictTabs>) => {
+  if (!hasMergeConflict) return '更新合并数据成功';
+  const tabMessages = mergeConflictTabs.map((item) => `${item.tab}标签页下的${item.fields.join('、')}字段`);
+  return `更新合并数据成功，存在合并冲突，${tabMessages.join('，')}存在冲突，请重新填写`;
+};
+
+const mergeRiskRecords = (records: RiskRecord[]): RiskRecord[] => {
+  const groups = records.reduce((result, record) => {
+    const key = buildRiskMergeKey(record);
+    const group = result.get(key) || [];
+    group.push(record);
+    result.set(key, group);
+    return result;
+  }, new Map<string, RiskRecord[]>());
+
+  return Array.from(groups.values()).map((group) => {
+    if (group.length === 1) return { ...group[0] };
+    const mergeConflictFields = getMergeConflictFields(group);
+    const hasMergeConflict = mergeConflictFields.length > 0;
+    return {
+      ...group[0],
+      id: `merged-${group.map((record) => record.id).join('-')}`,
+      assessmentItemId: joinUnique(group.map((record) => record.assessmentItemId)),
+      riskDescription: joinUniqueLines(group.map((record) => record.riskDescription)),
+      evaluationRecord: joinUniqueLines(group.map((record) => record.evaluationRecord)),
+      evaluationResult: 'NON_COMPLIANT',
+      merged: true,
+      mergedRiskRecordIds: group.map((record) => record.id),
+      hasMergeConflict,
+      mergeConflictFields,
+      mergeConflictMessage: hasMergeConflict ? '合并行中存在不一致的评审结果，请评估人重新确认。' : ''
+    };
+  });
+};
+
+const buildRiskSummaryMergeUpdateResult = (records: RiskRecord[]): RiskSummaryMergeUpdateResult => {
+  const mergedRecords = mergeRiskRecords(records);
+  const mergeConflictTabs = buildMergeConflictTabs(mergedRecords);
+  const hasMergeConflict = mergeConflictTabs.length > 0;
+  return {
+    mergeEnabled: true,
+    updatedMergedCount: mergedRecords.filter((record) => record.merged).length,
+    hasMergeConflict,
+    mergeConflictTabs,
+    message: buildMergeUpdateMessage(hasMergeConflict, mergeConflictTabs)
+  };
+};
+
+const resolveRiskRecordTargets = (records: RiskRecord[], id: string, mergedRiskRecordIds?: string[]) => {
+  const targetIds = mergedRiskRecordIds?.length ? new Set(mergedRiskRecordIds) : new Set([id]);
+  return records.filter((record) => targetIds.has(record.id));
+};
+
+const stripMergeTargetPayload = <T extends { mergedRiskRecordIds?: string[] }>(payload: T) => {
+  const { mergedRiskRecordIds, ...restPayload } = payload;
+  return restPayload;
 };
 
 const calculateProjectScore = async (projectId: string): Promise<ScoreResult> => {
@@ -471,7 +630,9 @@ const harmAnalysisInput = (record: RiskRecord, systemType: string) =>
     record.assessmentSubcategory || '',
     record.checkPoint || '',
     record.evaluationResult || '',
-    record.evaluationRecord || ''
+    record.evaluationRecord || '',
+    record.relatedData || '',
+    record.relatedActivities.join(',')
   ].join('|');
 
 const hashHarmAnalysisInput = (record: RiskRecord, systemType: string) => {
@@ -496,6 +657,21 @@ const harmDescriptionByLevel: Record<string, string> = {
   LOW: '一旦发生数据安全风险，影响范围相对有限，可能造成轻微业务或管理影响。'
 };
 
+const harmLevelNameByLevel: Record<string, string> = {
+  VERY_HIGH: '很高',
+  HIGH: '高',
+  RELATIVELY_HIGH: '较高',
+  MEDIUM: '中',
+  LOW: '低'
+};
+
+const evaluationResultNameByCode: Record<string, string> = {
+  COMPLIANT: '符合',
+  PARTIAL: '基本符合',
+  NON_COMPLIANT: '不符合',
+  NOT_APPLICABLE: '不适用'
+};
+
 const harmImpactObjectByLevel: Record<string, string> = {
   VERY_HIGH: '国家安全、经济运行、社会公共利益',
   HIGH: '社会秩序和公共利益',
@@ -509,6 +685,8 @@ const buildHarmAnalysisSuggestion = async (projectId: string, record: RiskRecord
   const harmLevel = inferHarmLevel(record);
   const assessmentContext = [record.assessmentCategory, record.assessmentSubcategory, record.checkPoint].filter(Boolean).join(' / ');
   const systemTypeName = project.systemTypeName || project.systemType;
+  const evaluationResultName = evaluationResultNameByCode[record.evaluationResult || ''] || record.evaluationResult || '-';
+  const relatedActivityNames = record.relatedActivities.map((item) => processingActivityLabels[item] || item);
   const step2Basis = [
     `项目系统类别：${systemTypeName || '-'}`,
     record.riskTypes.length ? `风险类型：${record.riskTypes.join('、')}` : '',
@@ -516,8 +694,10 @@ const buildHarmAnalysisSuggestion = async (projectId: string, record: RiskRecord
     record.riskSourceDescription ? `风险源描述：${record.riskSourceDescription}` : '',
     assessmentContext ? `现场测评分类：${assessmentContext}` : '',
     record.checkPoint ? `检查要点：${record.checkPoint}` : '',
-    record.evaluationResult ? `符合情况：${record.evaluationResult}` : '',
+    record.evaluationResult ? `符合情况：${evaluationResultName}` : '',
     record.evaluationRecord ? `评估结果：${record.evaluationRecord}` : '',
+    record.relatedData && record.relatedData !== '-' ? `涉及的数据及类型、级别：${record.relatedData}` : '',
+    relatedActivityNames.length ? `涉及的数据处理活动：${relatedActivityNames.join('、')}` : '',
     '判定规则：先判断是否侵害国家安全，再判断是否侵害社会秩序或公共利益，最后判断是否合法权益。'
   ].filter(Boolean);
   const step2Evidence = [
@@ -529,12 +709,12 @@ const buildHarmAnalysisSuggestion = async (projectId: string, record: RiskRecord
     .slice(0, 3);
   const trace: HarmAnalysisTrace = {
     step1: `被评估对象系统类别为${systemTypeName}，现场测评上下文为${assessmentContext || '未提供分类上下文'}。`,
-    step2: `结合风险类型、风险源描述、符合情况${record.evaluationResult || '-'}和现场记录，判定优先受侵害客体为${harmImpactObjectByLevel[harmLevel]}。`,
+    step2: `结合风险类型、风险源描述、符合情况${evaluationResultName}和现场记录，判定优先受侵害客体为${harmImpactObjectByLevel[harmLevel]}。`,
     step2Reason: `基于现场测评分类、检查要点、风险描述和风险源描述，判断该风险可能影响${harmImpactObjectByLevel[harmLevel]}，因此按该受侵害客体继续匹配侵害程度。`,
     step2Basis,
     step2Evidence,
     step3: `按侵害客体、影响范围和现场评估结果“${record.evaluationRecord || '-'}”匹配数据安全保护等级。`,
-    step4: `按保护等级匹配风险危害程度等级：${harmLevel}。`,
+    step4: `按保护等级匹配风险危害程度等级：${harmLevelNameByLevel[harmLevel]}。`,
     systemCategory: project.systemType,
     impactedObject: harmImpactObjectByLevel[harmLevel],
     damageDegree: harmLevel === 'RELATIVELY_HIGH' ? 'SERIOUS' : 'GENERAL',
@@ -548,7 +728,8 @@ const buildHarmAnalysisSuggestion = async (projectId: string, record: RiskRecord
   return {
     riskRecordId: record.id,
     harmLevel,
-    harmDescription: harmDescriptionByLevel[harmLevel],
+    harmLevelName: harmLevelNameByLevel[harmLevel],
+    harmDescription: `${record.riskSourceDescription || record.riskDescription || '现场发现数据安全管理要求落实不到位'}。该问题涉及${record.relatedData && record.relatedData !== '-' ? record.relatedData : '相关数据'}${relatedActivityNames.length ? `在${relatedActivityNames.join('、')}环节的处理` : ''}，${harmDescriptionByLevel[harmLevel]}结合现场测评结果和业务影响，本条风险危害程度判定为${harmLevelNameByLevel[harmLevel]}。`,
     harmImpactObject: harmImpactObjectByLevel[harmLevel],
     harmExample: record.riskDescription || '该风险可能造成数据安全管理要求执行不到位，影响业务连续性或合规性。',
     harmAnalysisTrace: trace,
@@ -580,8 +761,9 @@ const buildRiskRecord = (
   return {
     id: existing?.id || `risk-${item.id}`,
     evaluationItemId: item.id,
+    assessmentItemId: item.assessmentItemId,
+    assessmentSubcategory: template?.assessmentSubcategory || item.subcategory || item.subcategoryName || undefined,
     assessmentCategory: item.category || item.categoryName || '',
-    assessmentSubcategory: item.subcategory || item.subcategoryName || '',
     sourceItem: item.code,
     checkPoint: item.checkPoint,
     evaluationRecord: item.evaluationRecord,
@@ -591,6 +773,7 @@ const buildRiskRecord = (
     riskSourceDescription: canReuseExisting
       ? existing?.riskSourceDescription ?? template?.riskSourceDescription ?? ''
       : template?.riskSourceDescription ?? '',
+    riskSourceType: template?.riskSourceType || null,
     relatedData: canReuseExisting ? existing?.relatedData || '-' : '-',
     relatedActivities: canReuseExisting && existing?.relatedActivities?.length ? existing.relatedActivities : inferRelatedActivities(item),
     harmLevel: nextHarmLevel,
@@ -816,7 +999,7 @@ export const workflowDb = {
       .filter(
         (item) =>
           !keyword ||
-          [item.code, item.checkPoint, item.checkContent, item.category, item.subcategory].some((value) =>
+          [item.code, item.itemCode, item.assessmentItemId, item.checkPoint, item.checkContent, item.category, item.subcategory].some((value) =>
             (value || '').toLowerCase().includes(keyword)
           )
       );
@@ -850,29 +1033,71 @@ export const workflowDb = {
     await seedRisks(projectId);
     return delay(pageRiskSummary(riskRecords[projectId] as RiskSource[], query));
   },
-  async saveRiskSource(projectId: string, id: string, payload: Partial<Omit<RiskSource, 'id'>>) {
+  async getRiskSummaryMerge(projectId: string): Promise<RiskSummaryMergeState> {
+    return delay({ mergeEnabled: Boolean(riskSummaryMergeStates[projectId]) });
+  },
+  async setRiskSummaryMerge(projectId: string, mergeEnabled: boolean): Promise<RiskSummaryMergeState> {
+    await seedRisks(projectId);
+    if (mergeEnabled) {
+      const errors = validateRiskMergeRequiredFields(riskRecords[projectId] || []);
+      if (errors.length) {
+        throw buildRiskMergeRequiredFieldsError(errors);
+      }
+    }
+    riskSummaryMergeStates[projectId] = mergeEnabled;
+    return delay({ mergeEnabled });
+  },
+  async updateRiskSummaryMerge(projectId: string): Promise<RiskSummaryMergeUpdateResult> {
+    await seedRisks(projectId);
+    const records = riskRecords[projectId] || [];
+    const errors = validateRiskMergeRequiredFields(records);
+    if (errors.length) {
+      riskSummaryMergeStates[projectId] = false;
+      throw buildRiskMergeRequiredFieldsError(errors);
+    }
+    riskSummaryMergeStates[projectId] = true;
+    return delay(buildRiskSummaryMergeUpdateResult(records));
+  },
+  async getRiskFormOptions(projectId: string) {
+    await seedRisks(projectId);
+    const relatedDataOptions = Array.from(
+      new Set(
+        [...relatedDataOptionSeeds, ...(riskRecords[projectId] || []).map((row) => row.relatedData || '')]
+          .flatMap((value) => String(value || '').split('、'))
+          .map((value) => value.trim())
+          .filter((value) => value && value !== '-')
+      )
+    );
+    return delay({
+      relatedDataOptions,
+      relatedActivityOptions: defaultRelatedActivityOptions
+    });
+  },
+  async saveRiskSource(projectId: string, id: string, payload: RiskSourceSavePayload) {
     await seedRisks(projectId);
     const item = riskRecords[projectId].find((row) => row.id === id);
-    if (item) Object.assign(item, payload, { manualAdjusted: true });
+    if (item) Object.assign(item, normalizeRiskSourcePayload(payload), { manualAdjusted: true });
     return delay(undefined);
   },
   async listRiskItems(projectId: string, query?: Partial<RiskSummaryQuery>) {
     await seedRisks(projectId);
-    return delay(pageRiskSummary(riskRecords[projectId] as RiskItem[], query));
+    const records = riskSummaryMergeStates[projectId] ? mergeRiskRecords(riskRecords[projectId] || []) : riskRecords[projectId] || [];
+    return delay(pageRiskSummary(records as RiskItem[], query));
   },
-  async saveRiskItem(projectId: string, id: string, payload: Partial<Omit<RiskItem, 'id'>>) {
+  async saveRiskItem(projectId: string, id: string, payload: RiskItemSavePayload) {
     await seedRisks(projectId);
-    const item = riskRecords[projectId].find((row) => row.id === id);
-    if (item) {
-      const riskMatrix = await getProjectRiskMatrix(projectId);
+    const targets = resolveRiskRecordTargets(riskRecords[projectId], id, payload.mergedRiskRecordIds);
+    const nextPayload = stripMergeTargetPayload(payload);
+    const riskMatrix = await getProjectRiskMatrix(projectId);
+    targets.forEach((item) => {
       const nextHarmLevel = payload.harmLevel ?? item.harmLevel;
       const nextPossibilityLevel = payload.possibilityLevel ?? item.possibilityLevel;
-      Object.assign(item, payload, {
+      Object.assign(item, nextPayload, {
         riskLevel: applyRiskMatrix(riskMatrix, nextPossibilityLevel, nextHarmLevel),
         manualAdjusted: true,
         harmAnalysisStatus: payload.harmLevel ? 'MANUAL' : item.harmAnalysisStatus
       });
-    }
+    });
     return delay(undefined);
   },
   async suggestRiskItemHarm(projectId: string, id: string) {
@@ -916,7 +1141,8 @@ export const workflowDb = {
   },
   async applyRiskItemHarm(projectId: string, id: string, payload: HarmAnalysisApplyPayload) {
     await seedRisks(projectId);
-    const item = riskRecords[projectId].find((row) => row.id === id);
+    const targets = resolveRiskRecordTargets(riskRecords[projectId], id, payload.mergedRiskRecordIds);
+    const item = targets[0];
     if (!item) throw { code: 'RISK_ITEM_NOT_FOUND', message: '风险记录不存在' };
     const project = await mockDb.getProject(projectId);
     const currentHash = hashHarmAnalysisInput(item, project.systemType);
@@ -925,28 +1151,34 @@ export const workflowDb = {
     if (suggestion.harmAnalysisInputHash && suggestion.harmAnalysisInputHash !== currentHash) {
       throw { code: 'HARM_ANALYSIS_STALE', message: '风险输入已变化，请重新生成危害程度建议' };
     }
-    Object.assign(item, {
-      harmLevel: suggestion.harmLevel,
-      harmDescription: suggestion.harmDescription,
-      harmImpactObject: suggestion.harmImpactObject,
-      harmExample: suggestion.harmExample,
-      harmAnalysisTrace: suggestion.harmAnalysisTrace,
-      harmAnalysisConfidence: suggestion.harmAnalysisConfidence,
-      harmAnalysisInputHash: suggestion.harmAnalysisInputHash,
-      harmAnalysisStatus: 'CONFIRMED',
-      riskLevel: applyRiskMatrix(riskMatrix, item.possibilityLevel, suggestion.harmLevel),
-      manualAdjusted: true
+    targets.forEach((target) => {
+      Object.assign(target, {
+        harmLevel: suggestion.harmLevel,
+        harmDescription: suggestion.harmDescription,
+        harmImpactObject: suggestion.harmImpactObject,
+        harmExample: suggestion.harmExample,
+        harmAnalysisTrace: suggestion.harmAnalysisTrace,
+        harmAnalysisConfidence: suggestion.harmAnalysisConfidence,
+        harmAnalysisInputHash: suggestion.harmAnalysisInputHash,
+        harmAnalysisStatus: 'CONFIRMED',
+        riskLevel: applyRiskMatrix(riskMatrix, target.possibilityLevel, suggestion.harmLevel),
+        manualAdjusted: true
+      });
     });
     return delay(undefined);
   },
   async listRiskSuggestions(projectId: string, query?: Partial<RiskSummaryQuery>) {
     await seedRisks(projectId);
-    return delay(pageRiskSummary(riskRecords[projectId] as RiskSuggestion[], query));
+    const records = riskSummaryMergeStates[projectId] ? mergeRiskRecords(riskRecords[projectId] || []) : riskRecords[projectId] || [];
+    return delay(pageRiskSummary(records as RiskSuggestion[], query));
   },
-  async saveRiskSuggestion(projectId: string, id: string, payload: Partial<Omit<RiskSuggestion, 'id'>>) {
+  async saveRiskSuggestion(projectId: string, id: string, payload: RiskSuggestionSavePayload) {
     await seedRisks(projectId);
-    const item = riskRecords[projectId].find((row) => row.id === id);
-    if (item) Object.assign(item, payload, { manualAdjusted: true });
+    const targets = resolveRiskRecordTargets(riskRecords[projectId], id, payload.mergedRiskRecordIds);
+    const nextPayload = stripMergeTargetPayload(payload);
+    targets.forEach((item) => {
+      Object.assign(item, nextPayload, { manualAdjusted: true });
+    });
     return delay(undefined);
   }
 };

@@ -16,9 +16,22 @@
         style="margin-bottom: 16px"
       />
 
-      <el-tabs v-model="activeTab" @tab-change="load">
+      <el-tabs v-model="activeTab" @tab-change="handleTabChange">
         <el-tab-pane label="数据安全风险源清单" name="sources">
           <div class="summary-tab-actions">
+            <div class="summary-merge-switch">
+              <span>是否合并</span>
+              <el-switch v-model="mergeEnabled" :loading="mergeLoading" @change="handleMergeChange" />
+              <el-button
+                type="primary"
+                :icon="Refresh"
+                :loading="mergeUpdating"
+                :disabled="!mergeEnabled || mergeLoading"
+                @click="updateMergeData"
+              >
+                更新合并
+              </el-button>
+            </div>
             <el-upload
               :auto-upload="false"
               :show-file-list="false"
@@ -34,13 +47,22 @@
           </div>
           <el-table v-loading="loading" :data="riskSources" border>
             <el-table-column type="index" label="序号" width="70" :index="sourceIndex" />
-            <el-table-column label="风险类型" min-width="160">
-              <template #default="{ row }">{{ formatList(row.riskTypes) }}</template>
+            <el-table-column label="评估项ID" min-width="160" show-overflow-tooltip>
+              <template #default="{ row }">{{ formatAssessmentItemId(row.assessmentItemId) }}</template>
+            </el-table-column>
+            <el-table-column label="评估子类" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }">{{ formatNullableText(row.assessmentSubcategory) }}</template>
             </el-table-column>
             <el-table-column prop="checkPoint" label="检查要点" min-width="180" show-overflow-tooltip />
             <el-table-column prop="evaluationRecord" label="评估结果" min-width="220" show-overflow-tooltip />
             <el-table-column prop="riskDescription" label="风险描述" min-width="240" show-overflow-tooltip />
             <el-table-column prop="riskSourceDescription" label="风险源描述" min-width="260" show-overflow-tooltip />
+            <el-table-column label="风险源类型" min-width="180" show-overflow-tooltip>
+              <template #default="{ row }">{{ formatNullableText(row.riskSourceType) }}</template>
+            </el-table-column>
+            <el-table-column label="风险类型" min-width="160">
+              <template #default="{ row }">{{ formatList(row.riskTypes) }}</template>
+            </el-table-column>
             <el-table-column prop="relatedData" label="涉及的数据及类型、级别" min-width="220" show-overflow-tooltip />
             <el-table-column label="涉及的数据处理活动" min-width="180">
               <template #default="{ row }">{{ formatProcessingActivityList(row.relatedActivities) }}</template>
@@ -83,8 +105,8 @@
           </div>
           <el-table v-loading="loading" :data="riskItems" border>
             <el-table-column type="index" label="序号" width="70" :index="itemIndex" />
-            <el-table-column label="风险类型" min-width="150">
-              <template #default="{ row }">{{ formatList(row.riskTypes) }}</template>
+            <el-table-column label="评估项ID" min-width="160" show-overflow-tooltip>
+              <template #default="{ row }">{{ formatAssessmentItemId(row.assessmentItemId) }}</template>
             </el-table-column>
             <el-table-column prop="riskDescription" label="风险描述" min-width="220" show-overflow-tooltip />
             <el-table-column prop="harmLevel" label="危害程度" width="120">
@@ -99,7 +121,7 @@
                 </el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="harmDescription" label="危害程度描述" min-width="240" show-overflow-tooltip />
+            <el-table-column prop="harmDescription" label="危害程度分析" min-width="240" show-overflow-tooltip />
             <el-table-column prop="harmImpactObject" label="影响对象" min-width="160" show-overflow-tooltip />
             <el-table-column prop="possibilityLevel" label="发生可能性" width="120">
               <template #default="{ row }">
@@ -107,6 +129,9 @@
               </template>
             </el-table-column>
             <el-table-column prop="riskSourceDescription" label="风险源描述" min-width="240" show-overflow-tooltip />
+            <el-table-column label="风险类型" min-width="150">
+              <template #default="{ row }">{{ formatList(row.riskTypes) }}</template>
+            </el-table-column>
             <el-table-column prop="riskLevel" label="风险等级" width="120">
               <template #default="{ row }">
                 <el-tag :type="levelTagType(linkedRiskItemLevel(row))" effect="plain">
@@ -121,7 +146,14 @@
             <el-table-column label="操作" width="240" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" @click="openEdit(row)">修改</el-button>
-                <el-button link type="primary" :loading="harmAnalyzingId === row.id" @click="suggestRowHarm(row)">辅助判定</el-button>
+                <el-button
+                  link
+                  type="primary"
+                  :loading="harmAnalyzingId === row.id"
+                  @click="suggestRowHarm(row)"
+                >
+                  辅助判定
+                </el-button>
                 <el-button link :disabled="!hasHarmAnalysis(row)" @click="openHarmAnalysisDetail(row)">查看判定</el-button>
               </template>
             </el-table-column>
@@ -143,6 +175,9 @@
         <el-tab-pane label="数据安全风险处置建议" name="suggestions">
           <el-table v-loading="loading" :data="riskSuggestions" border>
             <el-table-column type="index" label="序号" width="70" :index="suggestionIndex" />
+            <el-table-column label="评估项ID" min-width="160" show-overflow-tooltip>
+              <template #default="{ row }">{{ formatAssessmentItemId(row.assessmentItemId) }}</template>
+            </el-table-column>
             <el-table-column prop="riskDescription" label="风险描述" min-width="240" show-overflow-tooltip />
             <el-table-column prop="riskSourceDescription" label="风险源描述" min-width="260" show-overflow-tooltip />
             <el-table-column prop="riskLevel" label="风险等级" width="120">
@@ -152,7 +187,9 @@
             </el-table-column>
             <el-table-column prop="remediationSuggestion" label="整改建议" min-width="280" show-overflow-tooltip />
             <el-table-column label="操作" width="100" fixed="right">
-              <template #default="{ row }"><el-button link type="primary" @click="openEdit(row)">修改</el-button></template>
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openEdit(row)">修改</el-button>
+              </template>
             </el-table-column>
           </el-table>
           <div class="summary-pagination">
@@ -206,17 +243,35 @@
             <el-input v-model="editForm.riskSourceDescription" type="textarea" :rows="3" />
           </el-form-item>
           <el-form-item label="涉及的数据及类型、级别">
-            <el-input v-model="editForm.relatedData" />
+            <el-select
+              v-model="sourceRelatedDataValues"
+              multiple
+              filterable
+              collapse-tags
+              placeholder="请选择涉及的数据及类型、级别"
+              style="width: 100%"
+            >
+              <el-option v-for="item in relatedDataSelectOptions" :key="item" :label="item" :value="item" />
+            </el-select>
+            <el-alert
+              v-if="!relatedDataOptions.length"
+              title="暂无数据资产选项，请先到信息调研维护数据类别和数据级别。"
+              type="info"
+              show-icon
+              :closable="false"
+              style="margin-top: 8px"
+            />
           </el-form-item>
           <el-form-item label="涉及的数据处理活动">
-            <el-select v-model="editForm.relatedActivities" multiple style="width: 100%">
-              <el-option label="收集" value="COLLECT" />
-              <el-option label="传输" value="TRANSFER" />
-              <el-option label="存储" value="STORE" />
-              <el-option label="使用和加工" value="USE_PROCESS" />
-              <el-option label="提供" value="PROVIDE" />
-              <el-option label="公开" value="PUBLIC" />
-              <el-option label="删除" value="DELETE" />
+            <el-select
+              v-model="sourceRelatedActivityValues"
+              multiple
+              filterable
+              collapse-tags
+              placeholder="请选择涉及的数据处理活动"
+              style="width: 100%"
+            >
+              <el-option v-for="item in relatedActivitySelectOptions" :key="item" :label="item" :value="item" />
             </el-select>
           </el-form-item>
         </template>
@@ -270,7 +325,7 @@
         <el-descriptions :column="2" border>
           <el-descriptions-item label="风险危害程度">
             <el-tag :type="levelTagType(harmAnalysisSuggestion.harmLevel)" effect="plain">
-              {{ formatAssessmentLevel(harmAnalysisSuggestion.harmLevel) }}
+              {{ formatSuggestedHarmLevel(harmAnalysisSuggestion) }}
             </el-tag>
           </el-descriptions-item>
           <el-descriptions-item label="模型状态">
@@ -282,10 +337,10 @@
           <el-descriptions-item label="影响对象" :span="2">
             {{ harmAnalysisSuggestion.harmImpactObject || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="风险危害程度描述" :span="2">
+          <el-descriptions-item label="危害程度分析" :span="2">
             {{ harmAnalysisSuggestion.harmDescription || '-' }}
           </el-descriptions-item>
-          <el-descriptions-item label="风险危害程度示例" :span="2">
+          <el-descriptions-item label="危害程度示例" :span="2">
             {{ harmAnalysisSuggestion.harmExample || '-' }}
           </el-descriptions-item>
         </el-descriptions>
@@ -346,9 +401,16 @@ import { knowledgeApi } from '@/api/knowledgeApi';
 import { projectApi } from '@/api/projectApi';
 import { riskApi } from '@/api/riskApi';
 import type { RiskMatrix, RiskMatrixJson } from '@/types/knowledge';
-import type { HarmAnalysisStatus, HarmAnalysisSuggestion, HarmAnalysisTrace, RiskItem, RiskSource, RiskSuggestion } from '@/types/risk';
+import type {
+  HarmAnalysisStatus,
+  HarmAnalysisSuggestion,
+  HarmAnalysisTrace,
+  RiskItem,
+  RiskSource,
+  RiskSuggestion
+} from '@/types/risk';
 import { downloadBlobFile } from '@/utils/fileActions';
-import { formatProcessingActivityList, riskLevelLabels } from '@/utils/labels';
+import { formatProcessingActivityList, processingActivityLabels, riskLevelLabels } from '@/utils/labels';
 import { normalizeRiskSummaryExcelImportResult, type RiskSummaryImportError } from '@/utils/riskSummaryExcelImportResult';
 import { calculateRiskLevelByMatrix } from '@/utils/riskMatrix';
 
@@ -360,6 +422,11 @@ type SummaryPagination = {
   pageSize: number;
   total: number;
 };
+type RiskMergeErrorResponse = {
+  code?: string;
+  message?: string;
+  data?: unknown;
+};
 
 const route = useRoute();
 const router = useRouter();
@@ -369,14 +436,23 @@ const activeTab = ref<SummaryTab>('sources');
 const riskSources = ref<RiskSource[]>([]);
 const riskItems = ref<RiskItem[]>([]);
 const riskSuggestions = ref<RiskSuggestion[]>([]);
+const mergeEnabled = ref(false);
+const confirmedMergeEnabled = ref(false);
+const mergeLoading = ref(false);
+const mergeUpdating = ref(false);
 const importingTab = ref<ImportableSummaryTab | ''>('');
 const exportingTab = ref<ImportableSummaryTab | ''>('');
 const importErrorVisible = ref(false);
 const importErrorRows = ref<RiskSummaryImportError[]>([]);
 const importImportedCount = ref(0);
 const importFailedCount = ref(0);
+const relatedDataOptions = ref<string[]>([]);
+const relatedActivityOptions = ref<string[]>([]);
+const sourceRelatedDataValues = ref<string[]>([]);
+const sourceRelatedActivityValues = ref<string[]>([]);
 const editVisible = ref(false);
 const editingId = ref('');
+const editMergedRiskRecordIds = ref<string[]>([]);
 const editForm = reactive<EditForm>({});
 const harmAnalysisVisible = ref(false);
 const harmAnalyzingId = ref('');
@@ -384,6 +460,7 @@ const batchAnalyzing = ref(false);
 const harmApplying = ref(false);
 const harmAnalysisSuggestion = ref<HarmAnalysisSuggestion | null>(null);
 const harmAnalysisRiskItemId = ref('');
+const harmAnalysisMergedRiskRecordIds = ref<string[]>([]);
 const harmAnalysisSuggestions = ref<Record<string, HarmAnalysisSuggestion>>({});
 const projectRiskMatrix = ref<RiskMatrixJson>({});
 const pagination = reactive<Record<SummaryTab, SummaryPagination>>({
@@ -396,6 +473,17 @@ const riskSummaryTabNames: Record<ImportableSummaryTab, string> = {
   sources: '数据安全风险源清单',
   items: '数据安全风险清单'
 };
+
+const defaultRelatedActivityOptions = [
+  '收集',
+  '传输',
+  '存储',
+  '使用和加工',
+  '提供',
+  '公开',
+  '删除'
+];
+const harmAnalysisBatchLimit = 20;
 
 const harmLevelLabels: Record<string, string> = {
   VERY_HIGH: '很高',
@@ -424,15 +512,25 @@ const llmStatusLabels: Record<string, string> = {
   PROVIDED: '联调回放'
 };
 
+const formatAssessmentItemId = (value?: string | null) => (value?.trim() ? value.trim() : '-');
+const formatNullableText = (value?: string | null) => (value?.trim() ? value.trim() : '-');
 const formatList = (value?: string[]) => (value?.length ? value.join('、') : '-');
 const isEmptyLevel = (value?: string) => !value || value === '-';
 const formatAssessmentLevel = (value?: string) => (isEmptyLevel(value) ? '待评估' : harmLevelLabels[value || ''] || value || '');
+const formatSuggestedHarmLevel = (suggestion: HarmAnalysisSuggestion) =>
+  suggestion.harmLevelName?.trim() || formatAssessmentLevel(suggestion.harmLevel);
 const formatPossibilityLevel = (value?: string) => (isEmptyLevel(value) ? '待评估' : possibilityLabels[value || ''] || value || '');
 const formatRiskLevel = (value?: string) => (isEmptyLevel(value) ? '待评定' : riskLevelLabels[value || ''] || value || '');
 const calculateRiskLevel = (possibilityLevel?: string, harmLevel?: string) =>
   calculateRiskLevelByMatrix(projectRiskMatrix.value, possibilityLevel, harmLevel);
-const linkedRiskItemLevel = (row: RiskItem) => calculateRiskLevel(row.possibilityLevel, row.harmLevel) || row.riskLevel || '';
+const linkedRiskItemLevel = (row: RiskItem) => row.riskLevel || '';
 const linkedEditRiskLevel = computed(() => calculateRiskLevel(editForm.possibilityLevel, editForm.harmLevel) || editForm.riskLevel || '');
+const uniqueValues = (values: Array<string | undefined | null>) =>
+  Array.from(new Set(values.map((item) => String(item || '').trim()).filter(Boolean)));
+const relatedDataSelectOptions = computed(() => uniqueValues([...relatedDataOptions.value, ...sourceRelatedDataValues.value]));
+const relatedActivitySelectOptions = computed(() =>
+  uniqueValues([...relatedActivityOptions.value, ...defaultRelatedActivityOptions, ...sourceRelatedActivityValues.value])
+);
 const levelTagType = (value?: string) => {
   if (isEmptyLevel(value)) return 'info';
   if (value === 'VERY_HIGH' || value === 'HIGH' || value === 'MAJOR') return 'danger';
@@ -518,6 +616,91 @@ const getErrorMessage = (error: unknown, fallback: string) => {
   return fallback;
 };
 
+const getRiskMergeError = (error: unknown) => (error && typeof error === 'object' ? (error as RiskMergeErrorResponse) : {});
+
+const splitRelatedData = (value?: string) =>
+  String(value || '')
+    .split(/[、,，;；\r\n]+/)
+    .map((item) => item.trim())
+    .filter((item) => item && item !== '-');
+
+const normalizeRelatedActivityValues = (value?: string[]) =>
+  (value || []).map((item) => processingActivityLabels[item] || item).filter(Boolean);
+
+const fetchRiskFormOptions = async () => {
+  try {
+    const options = await riskApi.formOptions(projectId);
+    relatedDataOptions.value = uniqueValues(options.relatedDataOptions || []);
+    relatedActivityOptions.value = uniqueValues(options.relatedActivityOptions || defaultRelatedActivityOptions);
+  } catch (error) {
+    relatedActivityOptions.value = defaultRelatedActivityOptions;
+    ElMessage.warning(`风险源下拉选项加载失败：${getErrorMessage(error, '请稍后重试')}`);
+  }
+};
+
+const fetchMergeStatus = async () => {
+  try {
+    const status = await riskApi.getMergeStatus(projectId);
+    mergeEnabled.value = status.mergeEnabled;
+    confirmedMergeEnabled.value = status.mergeEnabled;
+  } catch (error) {
+    ElMessage.warning(`合并开关状态加载失败：${getErrorMessage(error, '请稍后重试')}`);
+  }
+};
+
+const reloadMergedResultTabs = async () => {
+  pagination.items.pageNo = 1;
+  pagination.suggestions.pageNo = 1;
+  await Promise.all([loadTab('items'), loadTab('suggestions')]);
+};
+
+const handleMergeChange = async (value: string | number | boolean) => {
+  const enabled = Boolean(value);
+  mergeLoading.value = true;
+  try {
+    const status = await riskApi.setMergeStatus(projectId, enabled);
+    mergeEnabled.value = status.mergeEnabled;
+    confirmedMergeEnabled.value = status.mergeEnabled;
+    ElMessage.success(status.mergeEnabled ? '已开启风险清单合并' : '已关闭风险清单合并');
+    await reloadMergedResultTabs();
+  } catch (error) {
+    const mergeError = getRiskMergeError(error);
+    if (mergeError.code === 'RISK_MERGE_REQUIRED_FIELDS_MISSING') {
+      mergeEnabled.value = false;
+      confirmedMergeEnabled.value = false;
+      ElMessage.warning(getErrorMessage(error, '风险源清单存在未填写完整的行，请补充后再进行合并。'));
+    } else {
+      mergeEnabled.value = confirmedMergeEnabled.value;
+      ElMessage.error(`合并开关设置失败：${getErrorMessage(error, '请稍后重试')}`);
+    }
+  } finally {
+    mergeLoading.value = false;
+  }
+};
+
+const updateMergeData = async () => {
+  mergeUpdating.value = true;
+  try {
+    const result = await riskApi.updateMergeData(projectId);
+    mergeEnabled.value = result.mergeEnabled;
+    confirmedMergeEnabled.value = result.mergeEnabled;
+    if (result.hasMergeConflict) ElMessage.warning(result.message);
+    else ElMessage.success(result.message);
+    await reloadMergedResultTabs();
+  } catch (error) {
+    const mergeError = getRiskMergeError(error);
+    if (mergeError.code === 'RISK_MERGE_REQUIRED_FIELDS_MISSING') {
+      mergeEnabled.value = false;
+      confirmedMergeEnabled.value = false;
+      ElMessage.warning(getErrorMessage(error, '风险源清单存在未填写完整的行，请补充后再进行合并。'));
+    } else {
+      ElMessage.error(`更新合并失败：${getErrorMessage(error, '请稍后重试')}`);
+    }
+  } finally {
+    mergeUpdating.value = false;
+  }
+};
+
 const exportRiskSummary = async (tab: ImportableSummaryTab) => {
   exportingTab.value = tab;
   try {
@@ -598,6 +781,7 @@ const buildHarmSuggestionFromRow = (row: RiskItem): HarmAnalysisSuggestion | nul
 
 const openHarmAnalysisDetail = (row: RiskItem) => {
   harmAnalysisRiskItemId.value = row.id;
+  harmAnalysisMergedRiskRecordIds.value = row.mergedRiskRecordIds || [];
   harmAnalysisSuggestion.value = buildHarmSuggestionFromRow(row);
   harmAnalysisVisible.value = true;
 };
@@ -608,6 +792,7 @@ const suggestRowHarm = async (row: RiskItem) => {
     const suggestion = await riskApi.suggestRiskItemHarm(projectId, row.id);
     harmAnalysisSuggestions.value = { ...harmAnalysisSuggestions.value, [row.id]: suggestion };
     harmAnalysisRiskItemId.value = row.id;
+    harmAnalysisMergedRiskRecordIds.value = row.mergedRiskRecordIds || [];
     harmAnalysisSuggestion.value = suggestion;
     harmAnalysisVisible.value = true;
     ElMessage.success('已生成风险危害程度辅助判定建议');
@@ -620,7 +805,10 @@ const suggestRowHarm = async (row: RiskItem) => {
 };
 
 const suggestCurrentPageHarm = async () => {
-  const targetRows = riskItems.value.filter((row) => row.harmAnalysisStatus !== 'CONFIRMED');
+  const pendingRows = riskItems.value.filter(
+    (row) => row.harmAnalysisStatus !== 'PENDING' && row.harmAnalysisStatus !== 'CONFIRMED'
+  );
+  const targetRows = pendingRows.slice(0, harmAnalysisBatchLimit);
   if (!targetRows.length) {
     ElMessage.warning('当前页暂无待辅助判定的风险记录');
     return;
@@ -630,13 +818,16 @@ const suggestCurrentPageHarm = async () => {
   try {
     const suggestions = await riskApi.suggestRiskItemsHarm(projectId, {
       riskItemIds: targetRows.map((row) => row.id),
-      limit: targetRows.length
+      limit: harmAnalysisBatchLimit
     });
     harmAnalysisSuggestions.value = suggestions.reduce(
       (result, suggestion) => ({ ...result, [suggestion.riskRecordId]: suggestion }),
       { ...harmAnalysisSuggestions.value }
     );
-    ElMessage.success(`已生成 ${suggestions.length} 条风险危害程度辅助判定建议`);
+    const remainingCount = Math.max(pendingRows.length - targetRows.length, 0);
+    ElMessage.success(
+      `已生成 ${suggestions.length} 条风险危害程度辅助判定建议${remainingCount ? `，当前页另有 ${remainingCount} 条可继续判定` : ''}`
+    );
     await load();
   } catch (error) {
     ElMessage.error(`批量辅助判定失败：${getErrorMessage(error, '请稍后重试')}`);
@@ -651,7 +842,8 @@ const applyHarmAnalysis = async () => {
   harmApplying.value = true;
   try {
     await riskApi.applyRiskItemHarm(projectId, harmAnalysisRiskItemId.value, {
-      suggestion: harmAnalysisSuggestion.value
+      suggestion: harmAnalysisSuggestion.value,
+      mergedRiskRecordIds: harmAnalysisMergedRiskRecordIds.value
     });
     const nextSuggestions = { ...harmAnalysisSuggestions.value };
     delete nextSuggestions[harmAnalysisRiskItemId.value];
@@ -684,27 +876,39 @@ const handlePageSizeChange = (tab: SummaryTab) => {
   if (activeTab.value === tab) load();
 };
 
+const handleTabChange = async () => {
+  if (activeTab.value === 'sources') {
+    await fetchMergeStatus();
+    await fetchRiskFormOptions();
+  }
+  await load();
+};
+
+const loadTab = async (tab: SummaryTab) => {
+  const page = pagination[tab];
+  const query = { pageNo: page.pageNo, pageSize: page.pageSize };
+
+  if (tab === 'sources') {
+    const result = await riskApi.listRiskSources(projectId, query);
+    riskSources.value = result.list;
+    Object.assign(page, { pageNo: result.pageNo, pageSize: result.pageSize, total: result.total });
+  }
+  if (tab === 'items') {
+    const result = await riskApi.listRiskItems(projectId, query);
+    riskItems.value = result.list;
+    Object.assign(page, { pageNo: result.pageNo, pageSize: result.pageSize, total: result.total });
+  }
+  if (tab === 'suggestions') {
+    const result = await riskApi.listRiskSuggestions(projectId, query);
+    riskSuggestions.value = result.list;
+    Object.assign(page, { pageNo: result.pageNo, pageSize: result.pageSize, total: result.total });
+  }
+};
+
 const load = async () => {
   loading.value = true;
   try {
-    const page = pagination[activeTab.value];
-    const query = { pageNo: page.pageNo, pageSize: page.pageSize };
-
-    if (activeTab.value === 'sources') {
-      const result = await riskApi.listRiskSources(projectId, query);
-      riskSources.value = result.list;
-      Object.assign(page, { pageNo: result.pageNo, pageSize: result.pageSize, total: result.total });
-    }
-    if (activeTab.value === 'items') {
-      const result = await riskApi.listRiskItems(projectId, query);
-      riskItems.value = result.list;
-      Object.assign(page, { pageNo: result.pageNo, pageSize: result.pageSize, total: result.total });
-    }
-    if (activeTab.value === 'suggestions') {
-      const result = await riskApi.listRiskSuggestions(projectId, query);
-      riskSuggestions.value = result.list;
-      Object.assign(page, { pageNo: result.pageNo, pageSize: result.pageSize, total: result.total });
-    }
+    await loadTab(activeTab.value);
   } finally {
     loading.value = false;
   }
@@ -731,8 +935,18 @@ const refreshRisks = async () => {
 
 const openEdit = (row: RiskSource | RiskItem | RiskSuggestion) => {
   editingId.value = row.id;
+  editMergedRiskRecordIds.value = row.mergedRiskRecordIds || [];
   Object.keys(editForm).forEach((key) => delete editForm[key as keyof EditForm]);
   Object.assign(editForm, JSON.parse(JSON.stringify(row)) as EditForm);
+  if (activeTab.value === 'sources') {
+    const sourceRow = row as RiskSource;
+    sourceRelatedDataValues.value = splitRelatedData(sourceRow.relatedData);
+    sourceRelatedActivityValues.value = normalizeRelatedActivityValues(sourceRow.relatedActivities);
+    if (!relatedActivityOptions.value.length) {
+      relatedActivityOptions.value = defaultRelatedActivityOptions;
+    }
+    void fetchRiskFormOptions();
+  }
   if (activeTab.value === 'items') {
     editForm.riskLevel = calculateRiskLevel(editForm.possibilityLevel, editForm.harmLevel);
   }
@@ -745,8 +959,8 @@ const saveEdit = async () => {
       riskTypes: editForm.riskTypes || [],
       riskDescription: editForm.riskDescription || '',
       riskSourceDescription: editForm.riskSourceDescription || '',
-      relatedData: editForm.relatedData || '',
-      relatedActivities: editForm.relatedActivities || [],
+      relatedData: sourceRelatedDataValues.value,
+      relatedActivities: sourceRelatedActivityValues.value,
       sourceItem: editForm.sourceItem,
       manualAdjusted: true
     });
@@ -756,12 +970,14 @@ const saveEdit = async () => {
       harmLevel: editForm.harmLevel || '-',
       possibilityLevel: editForm.possibilityLevel || '-',
       riskLevel: linkedEditRiskLevel.value,
+      mergedRiskRecordIds: editMergedRiskRecordIds.value,
       manualAdjusted: true
     });
   }
   if (activeTab.value === 'suggestions') {
     await riskApi.saveRiskSuggestion(projectId, editingId.value, {
       remediationSuggestion: editForm.remediationSuggestion || '',
+      mergedRiskRecordIds: editMergedRiskRecordIds.value,
       manualAdjusted: true
     });
   }
@@ -772,6 +988,8 @@ const saveEdit = async () => {
 
 onMounted(async () => {
   await loadProjectRiskMatrix();
+  await fetchMergeStatus();
+  await fetchRiskFormOptions();
   await load();
 });
 </script>
@@ -779,9 +997,18 @@ onMounted(async () => {
 <style scoped>
 .summary-tab-actions {
   display: flex;
+  align-items: center;
   justify-content: flex-end;
   gap: 8px;
   margin-bottom: 12px;
+}
+
+.summary-merge-switch {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-right: auto;
+  white-space: nowrap;
 }
 
 .summary-pagination {

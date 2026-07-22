@@ -58,6 +58,27 @@ const unwrap = <T>(response: AxiosResponse<ApiResponse<T> | T>): T => {
   return payload as T;
 };
 
+const unwrapEnvelope = <T>(response: AxiosResponse<ApiResponse<T> | T>): ApiResponse<T> => {
+  const payload = response.data;
+  if (payload && typeof payload === 'object' && 'code' in payload) {
+    const apiPayload = payload as ApiResponse<T>;
+    if (apiPayload.code !== 'SUCCESS') {
+      throw {
+        code: apiPayload.code,
+        message: apiPayload.message || '请求失败',
+        data: apiPayload.data,
+        traceId: apiPayload.traceId
+      } satisfies ApiError;
+    }
+    return apiPayload;
+  }
+  return {
+    code: 'SUCCESS',
+    message: '',
+    data: payload as T
+  };
+};
+
 const parseContentDispositionFileName = (header?: string): string | undefined => {
   if (!header) return undefined;
   const utf8Match = header.match(/filename\*=UTF-8''([^;]+)/i);
@@ -79,6 +100,9 @@ export const http = {
   },
   post<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
     return service.post<ApiResponse<T> | T>(url, data, config).then(unwrap<T>);
+  },
+  postEnvelope<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<ApiResponse<T>> {
+    return service.post<ApiResponse<T> | T>(url, data, config).then(unwrapEnvelope<T>);
   },
   put<T>(url: string, data?: unknown, config?: AxiosRequestConfig): Promise<T> {
     return service.put<ApiResponse<T> | T>(url, data, config).then(unwrap<T>);
