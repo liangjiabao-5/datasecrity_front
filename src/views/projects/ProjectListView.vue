@@ -5,7 +5,7 @@
         <h1>项目管理</h1>
         <p>管理数据安全风险评估项目的创建、状态流转、详情查看和配置入口。</p>
       </div>
-      <el-button type="primary" :icon="Plus" @click="router.push('/projects/create')">创建新项目</el-button>
+      <el-button v-if="auth.hasPermission('project:create')" type="primary" :icon="Plus" @click="router.push('/projects/create')">创建新项目</el-button>
     </div>
 
     <div class="status-grid">
@@ -43,17 +43,20 @@
         <el-table-column prop="projectName" label="项目名称" min-width="220" show-overflow-tooltip />
         <el-table-column prop="projectCode" label="项目编号" width="160" />
         <el-table-column prop="assessmentOrg" label="评估单位" min-width="190" show-overflow-tooltip />
+        <el-table-column prop="ownerName" label="项目所有者" min-width="130" />
+        <el-table-column label="当前身份" width="110"><template #default="{ row }"><el-tag v-if="row.accessType" :type="accessTypeTagType(row.accessType)" effect="plain">{{ accessTypeName(row.accessType) }}</el-tag><span v-else class="muted">-</span></template></el-table-column>
         <el-table-column prop="assessmentPeriod" label="评估周期" width="210" />
         <el-table-column prop="statusName" label="状态" width="110">
           <template #default="{ row }">
             <el-tag :type="projectStatusTagType[row.status]" effect="light">{{ row.statusName }}</el-tag>
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="330" fixed="right">
+        <el-table-column label="操作" width="410" fixed="right">
           <template #default="{ row }">
             <div class="table-actions">
-              <el-button size="small" :icon="View" @click="openDetail(row.id)">查看</el-button>
+              <el-button v-if="row.canView" size="small" :icon="View" @click="openDetail(row.id)">查看</el-button>
               <el-button
+                v-if="row.canEdit"
                 size="small"
                 type="success"
                 :icon="VideoPlay"
@@ -62,8 +65,9 @@
               >
                 开始评估
               </el-button>
-              <el-button size="small" :icon="Edit" @click="router.push(`/projects/${row.id}/edit`)">编辑</el-button>
-              <el-button size="small" type="danger" :icon="Delete" @click="removeProject(row.id)">删除</el-button>
+              <el-button v-if="row.canEdit" size="small" :icon="Edit" @click="router.push(`/projects/${row.id}/edit`)">编辑</el-button>
+              <el-button v-if="row.canManageMembers" size="small" :icon="UserFilled" @click="openMembers(row)">协作人</el-button>
+              <el-button v-if="row.canDelete" size="small" type="danger" :icon="Delete" @click="removeProject(row.id)">删除</el-button>
             </div>
           </template>
         </el-table-column>
@@ -89,7 +93,9 @@
         <el-descriptions-item label="项目编号">{{ detail.projectCode }}</el-descriptions-item>
         <el-descriptions-item label="评估单位">{{ detail.assessmentOrg }}</el-descriptions-item>
         <el-descriptions-item label="项目状态">{{ detail.statusName }}</el-descriptions-item>
-        <el-descriptions-item label="系统类别">{{ projectOptionLabel(options.systemTypes, detail.systemType, detail.systemTypeName) }}</el-descriptions-item>
+        <el-descriptions-item label="项目所有者">{{ detail.ownerName || '-' }}</el-descriptions-item>
+        <el-descriptions-item label="当前身份">{{ detail.accessType ? accessTypeName(detail.accessType) : '-' }}</el-descriptions-item>
+        <el-descriptions-item label="系统类别">{{ formatProjectSystemType(detail.systemType, detail.systemTypeName) }}</el-descriptions-item>
         <el-descriptions-item label="评估模板">{{ projectOptionLabel(options.assessmentTemplates, detail.assessmentTemplateId, detail.assessmentTemplateName, detail.assessmentTemplateVersion) }}</el-descriptions-item>
         <el-descriptions-item label="评分模型">{{ projectOptionLabel(options.scoreModels, detail.scoreModelId, detail.scoreModelName, detail.scoreModelVersion) }}</el-descriptions-item>
         <el-descriptions-item label="风险评价矩阵">{{ projectOptionLabel(options.riskMatrices, detail.riskMatrixId, detail.riskMatrixName, detail.riskMatrixVersion) }}</el-descriptions-item>
@@ -106,37 +112,16 @@
 
       <template #footer>
         <el-button @click="detailVisible = false">关闭</el-button>
-        <el-button @click="templateVisible = true">存入模板</el-button>
-        <el-button type="primary" @click="detail && router.push(`/projects/${detail.id}/edit`)">编辑项目</el-button>
       </template>
     </el-dialog>
 
-    <el-dialog v-model="templateVisible" title="存入模板" width="520px">
-      <el-alert
-        title="后端接口文档标记该能力为后续批次，本页面保留入口并按占位状态处理。"
-        type="warning"
-        show-icon
-        :closable="false"
-        style="margin-bottom: 16px"
-      />
-      <el-form :model="templateForm" label-width="120px">
-        <el-form-item label="模板名称">
-          <el-input v-model="templateForm.templateName" placeholder="请输入模板名称" />
-        </el-form-item>
-        <el-form-item label="模板描述">
-          <el-input v-model="templateForm.templateDescription" type="textarea" />
-        </el-form-item>
-        <el-form-item label="保存内容">
-          <el-checkbox v-model="templateForm.includeAssessmentTemplate">评估模板</el-checkbox>
-          <el-checkbox v-model="templateForm.includeScoreModel">评分模型</el-checkbox>
-          <el-checkbox v-model="templateForm.includeTeamMembers">团队成员</el-checkbox>
-        </el-form-item>
-      </el-form>
-      <template #footer>
-        <el-button @click="templateVisible = false">取消</el-button>
-        <el-button type="primary" @click="saveTemplate">保存模板</el-button>
-      </template>
-    </el-dialog>
+    <ProjectMemberPanel
+      v-if="memberProject"
+      v-model="memberVisible"
+      :project="memberProject"
+      :can-transfer-owner="memberProject.canTransferOwner === true"
+      @owner-transferred="reloadAfterOwnerTransfer"
+    />
   </div>
 </template>
 
@@ -144,19 +129,22 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
-import { Delete, Edit, Plus, Refresh, Search, VideoPlay, View } from '@element-plus/icons-vue';
-import { knowledgeApi } from '@/api/knowledgeApi';
+import { Delete, Edit, Plus, Refresh, Search, UserFilled, VideoPlay, View } from '@element-plus/icons-vue';
 import { projectApi } from '@/api/projectApi';
-import type { ProjectConfigOptions, ProjectDetail, ProjectListItem, ProjectStatus, SaveProjectTemplatePayload, SelectOption } from '@/types/project';
-import { projectStatusTagType } from '@/utils/labels';
+import type { ProjectConfigOptions, ProjectDetail, ProjectListItem, ProjectStatus, SelectOption } from '@/types/project';
+import { formatProjectSystemType, projectStatusTagType } from '@/utils/labels';
+import { useAuthStore } from '@/stores/auth';
+import ProjectMemberPanel from '@/components/project/ProjectMemberPanel.vue';
 
 const router = useRouter();
+const auth = useAuthStore();
 const loading = ref(false);
 const rows = ref<ProjectListItem[]>([]);
 const total = ref(0);
 const detailVisible = ref(false);
-const templateVisible = ref(false);
 const detail = ref<ProjectDetail | null>(null);
+const memberProject = ref<ProjectListItem | null>(null);
+const memberVisible = ref(false);
 const optionsLoaded = ref(false);
 let optionsLoadPromise: Promise<void> | null = null;
 
@@ -180,14 +168,6 @@ const options = reactive<ProjectConfigOptions>({
   harmModels: [],
   scoreModels: [],
   systemTypes: []
-});
-
-const templateForm = reactive<SaveProjectTemplatePayload>({
-  templateName: '',
-  templateDescription: '',
-  includeAssessmentTemplate: true,
-  includeScoreModel: true,
-  includeTeamMembers: false
 });
 
 const statusCards = computed(() => [
@@ -235,6 +215,9 @@ const switchStatus = (status: '' | ProjectStatus) => {
   reloadFirstPage();
 };
 
+const accessTypeName = (accessType: NonNullable<ProjectListItem['accessType']>) => ({ ADMIN: '管理员', OWNER: '所有者', COLLABORATOR: '协作人' }[accessType]);
+const accessTypeTagType = (accessType: NonNullable<ProjectListItem['accessType']>) => ({ ADMIN: 'danger', OWNER: 'success', COLLABORATOR: 'info' }[accessType]);
+
 const withVersion = (name: string, version?: string | null) => (version ? `${name}（${version}）` : name);
 
 const projectOptionLabel = (items: SelectOption[], id: string, name?: string | null, version?: string | null) => {
@@ -247,8 +230,8 @@ const projectOptionLabel = (items: SelectOption[], id: string, name?: string | n
 const loadProjectOptions = async () => {
   if (optionsLoaded.value) return;
   if (!optionsLoadPromise) {
-    optionsLoadPromise = knowledgeApi
-      .getProjectConfigOptions()
+    optionsLoadPromise = projectApi
+      .configOptions()
       .then((next) => {
         Object.assign(options, next);
         optionsLoaded.value = true;
@@ -263,8 +246,6 @@ const loadProjectOptions = async () => {
 const openDetail = async (projectId: string) => {
   const [nextDetail] = await Promise.all([projectApi.detail(projectId), loadProjectOptions().catch(() => undefined)]);
   detail.value = nextDetail;
-  templateForm.templateName = `${detail.value.projectName}模板`;
-  templateVisible.value = false;
   detailVisible.value = true;
 };
 
@@ -287,11 +268,17 @@ const removeProject = async (projectId: string) => {
   reloadFirstPage();
 };
 
-const saveTemplate = async () => {
-  if (!detail.value) return;
-  const result = await projectApi.saveTemplate(detail.value.id, templateForm);
-  ElMessage.warning(result.message);
-  templateVisible.value = false;
+const openMembers = (project: ProjectListItem) => {
+  memberProject.value = project;
+  memberVisible.value = true;
+};
+
+const reloadAfterOwnerTransfer = async () => {
+  await loadProjects();
+  if (memberProject.value) {
+    memberProject.value = rows.value.find((project) => project.id === memberProject.value?.id) || memberProject.value;
+  }
+  if (detail.value) detail.value = await projectApi.detail(detail.value.id);
 };
 
 onMounted(() => {

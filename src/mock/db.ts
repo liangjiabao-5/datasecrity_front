@@ -1,13 +1,13 @@
-import type { PageQuery, PageResult, PlaceholderResult } from '@/types/api';
+import type { PageQuery, PageResult } from '@/types/api';
 import type {
   ProjectConfigOptions,
   ProjectCreatePayload,
   ProjectDetail,
   ProjectListItem,
   ProjectStatistics,
-  ProjectUpdatePayload,
-  SaveProjectTemplatePayload
+  ProjectUpdatePayload
 } from '@/types/project';
+import type { RiskMatrix } from '@/types/knowledge';
 import type { BasicInfoPayload, CustomReferencePayload, ReferenceItem } from '@/types/basicInfo';
 import type {
   AssessmentTeamMember,
@@ -41,9 +41,9 @@ const projectOptions: ProjectConfigOptions = {
     { id: 'score-balanced', name: '均衡型评分模型', version: 'v1' }
   ],
   systemTypes: [
-    { id: 'MANAGEMENT_SYSTEM', name: '管理信息系统' },
-    { id: 'POWER_CONTROL', name: '电力监控系统' },
-    { id: 'NETWORK_FACILITY', name: '通信网络设施' },
+    { id: 'POWER_MONITORING_SYSTEM', name: '电力监控系统' },
+    { id: 'MANAGEMENT_INFO_SYSTEM', name: '管理信息系统' },
+    { id: 'COMMUNICATION_NETWORK_FACILITY', name: '通信网络设施' },
     { id: 'DATA_RESOURCE', name: '数据资源' },
     { id: 'OTHER_SYSTEM_PLATFORM', name: '其他系统平台' }
   ]
@@ -61,7 +61,7 @@ let projects: ProjectDetail[] = [
     contacts: '010-88888888',
     assessmentPeriod: '2026-06-01 至 2026-06-30',
     createdAt: '2026-05-20',
-    systemType: 'MANAGEMENT_SYSTEM',
+    systemType: 'MANAGEMENT_INFO_SYSTEM',
     systemTypeName: '管理信息系统',
     riskMatrixId: 'matrix-v1',
     riskMatrixName: '默认五级风险评价矩阵',
@@ -92,7 +92,7 @@ let projects: ProjectDetail[] = [
     contacts: '13800000000',
     assessmentPeriod: '2026-07-01 至 2026-07-20',
     createdAt: '2026-05-22',
-    systemType: 'POWER_CONTROL',
+    systemType: 'POWER_MONITORING_SYSTEM',
     systemTypeName: '电力监控系统',
     riskMatrixId: 'matrix-power',
     riskMatrixName: '电力行业风险评价矩阵',
@@ -229,6 +229,13 @@ const toListItem = (project: ProjectDetail): ProjectListItem => ({
   status: project.status,
   statusName: project.statusName,
   ownerName: project.ownerName,
+  ownerId: project.ownerId,
+  accessType: project.accessType || 'ADMIN',
+  canView: true,
+  canEdit: true,
+  canManageMembers: true,
+  canDelete: true,
+  canTransferOwner: true,
   assessmentPeriod: project.assessmentPeriod,
   createdAt: project.createdAt
 });
@@ -343,6 +350,21 @@ export const mockDb = {
     return delay(clone(project));
   },
 
+  async getProjectRiskMatrix(projectId: string): Promise<RiskMatrix | null> {
+    const project = projects.find((item) => item.id === projectId);
+    if (!project || !project.riskMatrixId) return delay(null);
+    return delay({
+      id: project.riskMatrixId,
+      matrixName: project.riskMatrixName || project.riskMatrixId,
+      status: 'ENABLED',
+      matrixJson: {
+        HIGH: { VERY_HIGH: 'VERY_HIGH', HIGH: 'HIGH', MEDIUM: 'RELATIVELY_HIGH', LOW: 'MEDIUM' },
+        MEDIUM: { VERY_HIGH: 'HIGH', HIGH: 'RELATIVELY_HIGH', MEDIUM: 'MEDIUM', LOW: 'LOW' },
+        LOW: { VERY_HIGH: 'RELATIVELY_HIGH', HIGH: 'MEDIUM', MEDIUM: 'LOW', LOW: 'LOW' }
+      }
+    });
+  },
+
   async startProject(projectId: string): Promise<void> {
     const project = projects.find((item) => item.id === projectId);
     if (!project) throw { code: 'PROJECT_NOT_FOUND', message: '项目不存在' };
@@ -354,10 +376,6 @@ export const mockDb = {
   async deleteProject(projectId: string): Promise<void> {
     projects = projects.filter((project) => project.id !== projectId);
     return delay(undefined);
-  },
-
-  async saveProjectTemplate(_projectId: string, _payload: SaveProjectTemplatePayload): Promise<PlaceholderResult> {
-    return delay({ status: 'PLACEHOLDER', message: '项目模板保存能力本批暂缓实现' });
   },
 
   async getReferenceOptions(): Promise<{ laws: ReferenceItem[]; standards: ReferenceItem[] }> {

@@ -8,7 +8,6 @@ import type {
   KnowledgeQuery,
   KnowledgeResource
 } from '@/types/knowledge';
-import type { ProjectConfigOptions, SelectOption } from '@/types/project';
 import { useMock } from '@/utils/env';
 import { http } from '@/utils/request';
 
@@ -39,20 +38,6 @@ const normalizePage = <T>(payload: KnowledgeListResponse<T>, query: KnowledgeQue
     pageSize: payload.pageSize ?? query.pageSize
   };
 };
-
-const optionName = (item: KnowledgeEntity): string => {
-  if ('templateName' in item) return item.templateName;
-  if ('modelName' in item) return item.modelName;
-  if ('matrixName' in item) return item.matrixName;
-  return item.id;
-};
-
-const toOption = (item: KnowledgeEntity): SelectOption => ({
-  id: item.id,
-  name: optionName(item),
-  version: 'version' in item ? item.version : undefined,
-  status: 'status' in item ? item.status : undefined
-});
 
 export const knowledgeApi = {
   list<T extends KnowledgeEntity>(resource: KnowledgeResource, query: KnowledgeQuery): Promise<PageResult<T>> {
@@ -144,41 +129,5 @@ export const knowledgeApi = {
 
   exportAssessmentTemplateUrl(templateId: string): string {
     return `/api/v1/knowledge/assessment-templates/${templateId}/export`;
-  },
-
-  async getProjectConfigOptions(): Promise<ProjectConfigOptions> {
-    const query = { pageNo: 1, pageSize: 200, enabledOnly: true };
-    const [templates, matrices, harmModels, scoreModels] = await Promise.all([
-      this.list('assessment', query),
-      this.list('matrix', query),
-      this.list('harm', query),
-      this.list('score', query)
-    ]);
-    return {
-      assessmentTemplates: templates.list.map(toOption),
-      riskMatrices: matrices.list.map(toOption),
-      harmModels: harmModels.list.map(toOption),
-      scoreModels: scoreModels.list.map(toOption),
-      systemTypes: [
-        { id: 'MANAGEMENT_SYSTEM', name: '管理信息系统' },
-        { id: 'POWER_CONTROL', name: '电力监控系统' },
-        { id: 'NETWORK_FACILITY', name: '通信网络设施' },
-        { id: 'DATA_RESOURCE', name: '数据资源' },
-        { id: 'OTHER_SYSTEM_PLATFORM', name: '其他系统平台' }
-      ]
-    };
-  },
-
-  async listAssessmentTemplates(): Promise<SelectOption[]> {
-    return (await this.getProjectConfigOptions()).assessmentTemplates;
-  },
-  async listScoreModels(): Promise<SelectOption[]> {
-    return (await this.getProjectConfigOptions()).scoreModels;
-  },
-  async listHarmModels(): Promise<SelectOption[]> {
-    return (await this.getProjectConfigOptions()).harmModels;
-  },
-  async listRiskMatrices(): Promise<SelectOption[]> {
-    return (await this.getProjectConfigOptions()).riskMatrices;
   }
 };

@@ -98,6 +98,49 @@ a {
   padding: 12px;
 }
 
+.sidebar-user {
+  padding: 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.sidebar-user .el-dropdown {
+  display: block;
+}
+
+.sidebar-user-button {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 10px;
+  padding: 9px;
+  cursor: pointer;
+  border: 0;
+  border-radius: var(--radius-md);
+  color: #fff;
+  background: rgba(255, 255, 255, 0.06);
+  text-align: left;
+}
+
+.sidebar-user-button:hover {
+  background: rgba(255, 255, 255, 0.12);
+}
+
+.sidebar-user-info {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.sidebar-user-info strong,
+.sidebar-user-info small {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.sidebar-user-info strong { font-size: 13px; }
+.sidebar-user-info small { color: #94a3b8; font-size: 11px; }
+
 .side-menu .el-menu {
   border-right: 0;
   background: transparent;
@@ -354,6 +397,71 @@ a {
   color: var(--text-muted);
 }
 
+.login-page {
+  display: grid;
+  min-height: 100%;
+  place-items: center;
+  padding: 24px;
+  background: radial-gradient(circle at top right, #dbeafe 0, transparent 42%), linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+}
+
+.login-card {
+  width: min(100%, 420px);
+  padding: 40px;
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.94);
+  box-shadow: 0 24px 64px rgba(15, 23, 42, 0.15);
+}
+
+.login-brand { display: flex; align-items: center; gap: 12px; }
+.login-brand img { width: 46px; height: 46px; border-radius: 8px; object-fit: contain; }
+.login-brand div { display: flex; flex-direction: column; }
+.login-brand strong { font-size: 20px; letter-spacing: 1px; }
+.login-brand span { color: var(--text-muted); font-size: 12px; }
+.login-heading { margin: 30px 0 22px; }
+.login-heading h1 { margin: 0; font-size: 26px; }
+.login-heading p { margin: 8px 0 0; color: var(--text-muted); font-size: 13px; }
+.login-submit { width: 100%; margin-top: 8px; }
+.login-hint { margin: 18px 0 0; color: var(--text-muted); font-size: 12px; text-align: center; }
+
+.settings-card-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+
+.settings-entry {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 126px;
+  padding: 20px;
+  cursor: pointer;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  color: var(--text-primary);
+  background: var(--bg-primary);
+  box-shadow: var(--shadow-sm);
+  text-align: left;
+  transition: 0.16s ease;
+}
+
+.settings-entry:hover { border-color: rgba(59, 130, 246, 0.45); box-shadow: var(--shadow-md); transform: translateY(-1px); }
+.settings-entry > .el-icon:first-child { width: 40px; height: 40px; border-radius: 8px; color: var(--primary-color); background: #eff6ff; font-size: 21px; }
+.settings-entry > div { display: flex; min-width: 0; flex: 1; flex-direction: column; gap: 5px; }
+.settings-entry span { color: var(--text-muted); font-size: 13px; }
+.settings-entry-arrow { color: var(--text-muted); }
+.permission-checkboxes { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+.permission-checkboxes .el-checkbox { display: flex; height: auto; min-height: 58px; align-items: flex-start; margin-right: 0; padding: 10px; }
+.permission-checkboxes .el-checkbox__label { display: flex; min-width: 0; flex-direction: column; gap: 4px; white-space: normal; }
+.permission-checkboxes .el-checkbox__label span { color: var(--text-muted); font-size: 12px; }
+.member-toolbar { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin: 18px 0 12px; }
+.member-username { display: block; margin-top: 2px; color: var(--text-muted); font-size: 12px; }
+.member-transfer { display: flex; align-items: center; justify-content: space-between; gap: 18px; }
+.member-transfer p { margin: 4px 0 0; color: var(--text-muted); font-size: 13px; }
+.compact-filter { margin-bottom: 12px; padding: 0; border: 0; box-shadow: none; }
+
 @media (max-width: 900px) {
   .app-shell {
     flex-direction: column;
@@ -385,6 +493,8 @@ a {
   .status-grid {
     grid-template-columns: repeat(2, minmax(120px, 1fr));
   }
+
+  .permission-checkboxes { grid-template-columns: 1fr; }
 }
 
 @media (max-width: 520px) {

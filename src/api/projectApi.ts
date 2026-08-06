@@ -1,13 +1,14 @@
 import { mockDb } from '@/mock/db';
-import type { PageQuery, PageResult, PlaceholderResult } from '@/types/api';
+import type { PageQuery, PageResult } from '@/types/api';
 import type {
   ProjectCreatePayload,
   ProjectDetail,
+  ProjectConfigOptions,
   ProjectListItem,
   ProjectStatistics,
-  ProjectUpdatePayload,
-  SaveProjectTemplatePayload
+  ProjectUpdatePayload
 } from '@/types/project';
+import type { RiskMatrix } from '@/types/knowledge';
 import { useMock } from '@/utils/env';
 import { http } from '@/utils/request';
 
@@ -20,6 +21,11 @@ export const projectApi = {
   statistics(): Promise<ProjectStatistics> {
     if (useMock) return mockDb.getProjectStatistics();
     return http.get('/projects/statistics');
+  },
+
+  configOptions(): Promise<ProjectConfigOptions> {
+    if (useMock) return mockDb.getProjectConfigOptions();
+    return http.get('/projects/config-options');
   },
 
   create(payload: ProjectCreatePayload): Promise<{ projectId: string }> {
@@ -37,6 +43,11 @@ export const projectApi = {
     return http.get(`/projects/${projectId}`);
   },
 
+  riskMatrix(projectId: string): Promise<RiskMatrix | null> {
+    if (useMock) return mockDb.getProjectRiskMatrix(projectId);
+    return http.get(`/projects/${projectId}/risk-matrix`);
+  },
+
   start(projectId: string): Promise<void> {
     if (useMock) return mockDb.startProject(projectId);
     return http.post(`/projects/${projectId}/start`);
@@ -45,10 +56,5 @@ export const projectApi = {
   delete(projectId: string): Promise<void> {
     if (useMock) return mockDb.deleteProject(projectId);
     return http.delete(`/projects/${projectId}`);
-  },
-
-  saveTemplate(projectId: string, payload: SaveProjectTemplatePayload): Promise<PlaceholderResult> {
-    if (useMock) return mockDb.saveProjectTemplate(projectId, payload);
-    return http.post(`/projects/${projectId}/save-template`, payload);
   }
 };

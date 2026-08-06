@@ -6,5 +6,16 @@ import 'element-plus/dist/index.css';
 import './styles/global.css';
 import App from './App.vue';
 import router from './router';
+import { useAuthStore } from './stores/auth';
 
-createApp(App).use(createPinia()).use(router).use(ElementPlus, { locale: zhCn }).mount('#app');
+const pinia = createPinia();
+const auth = useAuthStore(pinia);
+
+window.addEventListener('auth:refreshed', (event) => {
+  auth.applySession((event as CustomEvent).detail);
+});
+window.addEventListener('auth:expired', () => {
+  auth.clearSession();
+});
+
+createApp(App).use(pinia).use(router).use(ElementPlus, { locale: zhCn }).mount('#app');

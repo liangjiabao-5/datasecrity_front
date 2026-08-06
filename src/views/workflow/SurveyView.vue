@@ -268,7 +268,7 @@
                 <el-table-column prop="storageLocation" label="数据存储分布情况" min-width="170">
                   <template #default="{ row }"><CompactCellInput v-model="row.storageLocation" /></template>
                 </el-table-column>
-                <el-table-column prop="flowDescription" label="数据流转情况" min-width="170">
+                <el-table-column prop="flowDescription" label="数据处理活动" min-width="170">
                   <template #default="{ row }"><CompactCellInput v-model="row.flowDescription" /></template>
                 </el-table-column>
                 <el-table-column label="是否进行分类分级" min-width="150">
@@ -289,8 +289,20 @@
                   </template>
                 </el-table-column>
               </el-table>
+              <div class="survey-pagination">
+                <el-pagination
+                  v-model:current-page="assetPagination['data-assets'].pageNo"
+                  v-model:page-size="assetPagination['data-assets'].pageSize"
+                  background
+                  layout="total, sizes, prev, pager, next, jumper"
+                  :total="assetPagination['data-assets'].total"
+                  :page-sizes="[10, 20, 50]"
+                  @current-change="handleAssetPageChange('data-assets')"
+                  @size-change="handleAssetPageSizeChange('data-assets')"
+                />
+              </div>
               <div class="table-note">
-                数据形态、数据范围、数据规模、数据来源、存储分布、流转情况、分类分级、数据类别、数据级别和个人信息标识按原型表 A2 填写。
+                数据形态、数据范围、数据规模、数据来源、存储分布、数据处理活动、分类分级、数据类别、数据级别和个人信息标识按原型表 A2 填写。
               </div>
             </section>
 
@@ -324,6 +336,18 @@
                   </template>
                 </el-table-column>
               </el-table>
+              <div class="survey-pagination">
+                <el-pagination
+                  v-model:current-page="assetPagination['personal-info'].pageNo"
+                  v-model:page-size="assetPagination['personal-info'].pageSize"
+                  background
+                  layout="total, sizes, prev, pager, next, jumper"
+                  :total="assetPagination['personal-info'].total"
+                  :page-sizes="[10, 20, 50]"
+                  @current-change="handleAssetPageChange('personal-info')"
+                  @size-change="handleAssetPageSizeChange('personal-info')"
+                />
+              </div>
               <div class="table-note">
                 个人信息类别包括特征类、财产类、医疗类、通信类、行踪类、教育工作类、网络行为类、证件类等；敏感程度按相关法律法规口径填写。
               </div>
@@ -356,6 +380,18 @@
                   </template>
                 </el-table-column>
               </el-table>
+              <div class="survey-pagination">
+                <el-pagination
+                  v-model:current-page="assetPagination['important-data'].pageNo"
+                  v-model:page-size="assetPagination['important-data'].pageSize"
+                  background
+                  layout="total, sizes, prev, pager, next, jumper"
+                  :total="assetPagination['important-data'].total"
+                  :page-sizes="[10, 20, 50]"
+                  @current-change="handleAssetPageChange('important-data')"
+                  @size-change="handleAssetPageSizeChange('important-data')"
+                />
+              </div>
             </section>
 
             <section class="survey-section">
@@ -385,6 +421,18 @@
                   </template>
                 </el-table-column>
               </el-table>
+              <div class="survey-pagination">
+                <el-pagination
+                  v-model:current-page="assetPagination['core-data'].pageNo"
+                  v-model:page-size="assetPagination['core-data'].pageSize"
+                  background
+                  layout="total, sizes, prev, pager, next, jumper"
+                  :total="assetPagination['core-data'].total"
+                  :page-sizes="[10, 20, 50]"
+                  @current-change="handleAssetPageChange('core-data')"
+                  @size-change="handleAssetPageSizeChange('core-data')"
+                />
+              </div>
             </section>
           </div>
         </el-tab-pane>
@@ -518,6 +566,8 @@ import { normalizeSurveyWordImportError } from '@/utils/surveyWordImportResult';
 import type { SurveyWordImportError } from '@/utils/surveyWordImportResult';
 
 type SurveyTabKey = 'processor' | 'business' | 'assets' | 'processing' | 'security';
+type AssetListKey = 'data-assets' | SpecialDataType;
+type AssetPagination = { pageNo: number; pageSize: number; total: number };
 type Option = { label: string; value: string };
 type TextField = {
   key: string;
@@ -569,6 +619,12 @@ const dataAssets = ref<DataAsset[]>([]);
 const personalInfoRows = ref<SpecialDataRecord[]>([]);
 const importantDataRows = ref<SpecialDataRecord[]>([]);
 const coreDataRows = ref<SpecialDataRecord[]>([]);
+const assetPagination = reactive<Record<AssetListKey, AssetPagination>>({
+  'data-assets': { pageNo: 1, pageSize: 10, total: 0 },
+  'personal-info': { pageNo: 1, pageSize: 10, total: 0 },
+  'important-data': { pageNo: 1, pageSize: 10, total: 0 },
+  'core-data': { pageNo: 1, pageSize: 10, total: 0 }
+});
 const processingSurvey = reactive<ProcessingActivitySurvey>(emptyProcessingSurvey());
 const security = reactive<SecurityProtection>({});
 const processingTextModel = processingSurvey as unknown as Record<string, string>;
@@ -606,9 +662,9 @@ const activityOptions: Array<{ label: string; value: ProcessingActivityType }> =
 
 const processingActivityFields: Record<ProcessingActivityType, Array<keyof ProcessingActivitySurvey>> = {
   COLLECT: [
+    'collectionDataScope',
     'collectionChannels',
     'collectionMethod',
-    'collectionDataScope',
     'collectionPurpose',
     'collectionFrequency',
     'collectionExternalSources',
@@ -616,8 +672,9 @@ const processingActivityFields: Record<ProcessingActivityType, Array<keyof Proce
     'collectionRelatedSystems',
     'collectionPublicDeviceUsage'
   ],
-  TRANSFER: ['onlineChannel', 'offlineTransfer', 'transferProtocol', 'dataInterface'],
+  TRANSFER: ['transferDataScope', 'transferDataLinkInventory', 'onlineChannel', 'offlineTransfer', 'transferProtocol', 'dataInterface'],
   STORE: [
+    'storageDataScope',
     'storageMethod',
     'dataCenter',
     'storageSystem',
@@ -626,8 +683,9 @@ const processingActivityFields: Record<ProcessingActivityType, Array<keyof Proce
     'storageDuration',
     'backupRedundancyStrategy'
   ],
-  USE_PROCESS: ['usePurpose', 'useMethod', 'useScope', 'useScenario', 'algorithmRules', 'processingDetails', 'algorithmRecommendationService', 'entrustedOrJointProcessing'],
+  USE_PROCESS: ['useDataScope', 'usePurpose', 'useMethod', 'useScope', 'useScenario', 'algorithmRules', 'processingDetails', 'algorithmRecommendationService', 'entrustedOrJointProcessing'],
   PROVIDE: [
+    'provideDataScope',
     'providePurpose',
     'provideMethod',
     'provideScope',
@@ -635,8 +693,8 @@ const processingActivityFields: Record<ProcessingActivityType, Array<keyof Proce
     'provideContracts',
     'providedPersonalInfoAndImportantData'
   ],
-  PUBLIC: ['publicPurpose', 'publicMethod', 'publicScope', 'publicAudienceSize', 'publicDataTypes', 'publicDataScale'],
-  DELETE: ['deletionScenarios', 'deletionMethod', 'dataArchive', 'mediaDestruction']
+  PUBLIC: ['publicDataScope', 'publicPurpose', 'publicMethod', 'publicScope', 'publicAudienceSize', 'publicDataTypes', 'publicDataScale'],
+  DELETE: ['deletionDataScope', 'deletionScenarios', 'deletionMethod', 'dataArchive', 'mediaDestruction']
 };
 
 const processingSections: ProcessingSection[] = [
@@ -644,9 +702,9 @@ const processingSections: ProcessingSection[] = [
     title: '数据收集',
     activity: 'COLLECT',
     fields: [
+      { key: 'collectionDataScope', label: '数据范围', placeholder: '具体涵盖的数据类型，包括但不限于个人信息、财务数据、运营数据、客户反馈、市场调研数据等', span: 24 },
       { key: 'collectionChannels', label: '数据收集渠道', placeholder: '（如涉及数据收集）指数据的来源途径，包括内部系统、第三方合作平台、传感器设备、公开数据集等', span: 24 },
       { key: 'collectionMethod', label: '收集方式', placeholder: '（如涉及数据收集）指数据采集的具体方法，如API接口调用、爬虫抓取、用户提交、自动化采集等', span: 24 },
-      { key: 'collectionDataScope', label: '数据范围', placeholder: '具体涵盖的数据类型，包括但不限于个人信息、财务数据、运营数据、客户反馈、市场调研数据等', span: 24 },
       { key: 'collectionPurpose', label: '收集目的', placeholder: '明确收集数据的具体用途，如市场分析、产品改进、客户服务、内部管理等', span: 24 },
       { key: 'collectionFrequency', label: '收集频率', placeholder: '（如涉及数据收集）指数据收集的时间间隔，如实时收集、每日更新、每周汇总等', span: 24 },
       { key: 'collectionExternalSources', label: '外部数据源', placeholder: '（如涉及数据收集，且来源为外部数据源）指从外部获取的数据来源，包括合作伙伴、公共数据库、第三方服务商等', span: 24 },
@@ -659,6 +717,7 @@ const processingSections: ProcessingSection[] = [
     title: '数据存储',
     activity: 'STORE',
     fields: [
+      { key: 'storageDataScope', label: '数据范围', placeholder: '具体涵盖的数据类型，包括但不限于个人信息、财务数据、运营数据、客户反馈、市场调研数据等', span: 24 },
       { key: 'storageMethod', label: '数据存储方式', placeholder: '（如涉及数据存储）数据存储的具体方法和技术，包括集中式存储、分布式存储、块存储、文件存储、对象存储等', span: 24 },
       { key: 'dataCenter', label: '数据中心', placeholder: '（如涉及数据存储）如用到数据中心，数据中心名称', span: 24 },
       { key: 'storageSystem', label: '存储系统', placeholder: '（如涉及数据存储）使用的存储系统，如数据库系统、大数据平台、云存储服务、网络硬盘、存储介质等', span: 24 },
@@ -672,6 +731,8 @@ const processingSections: ProcessingSection[] = [
     title: '数据传输',
     activity: 'TRANSFER',
     fields: [
+      { key: 'transferDataScope', label: '数据范围', placeholder: '具体涵盖的数据类型，包括但不限于个人信息、财务数据、运营数据、客户反馈、市场调研数据等', span: 24 },
+      { key: 'transferDataLinkInventory', label: '数据链路盘点', placeholder: '请填写数据传输链路清单，并与业务流程图保持一致', rows: 4, span: 24 },
       { key: 'onlineChannel', label: '在线通道', placeholder: '（如涉及数据传输）包括互联网传输、虚拟专用网络（VPN）、物理专线等', span: 24 },
       { key: 'offlineTransfer', label: '离线传输', placeholder: '（如涉及数据传输）通过物理介质（如USB闪存盘、硬盘、光盘等）进行的数据传输', span: 24 },
       { key: 'transferProtocol', label: '传输协议', placeholder: '（如涉及数据传输）常用协议和加密协议，如HTTP(S)、FTP(S)、SFTP、TLS/SSL、SSH等', span: 24 },
@@ -682,6 +743,7 @@ const processingSections: ProcessingSection[] = [
     title: '数据使用和加工',
     activity: 'USE_PROCESS',
     fields: [
+      { key: 'useDataScope', label: '数据范围', placeholder: '具体涵盖的数据类型，包括但不限于个人信息、财务数据、运营数据、客户反馈、市场调研数据等', span: 24 },
       { key: 'usePurpose', label: '数据使用目的', placeholder: '（如涉及数据使用）具体用途，如市场营销分析、客户关系管理、产品优化、内部管理决策等', span: 24 },
       { key: 'useMethod', label: '数据使用方式', placeholder: '（如涉及数据使用）指数据访问的具体方式，包括直接查询、批量导出、实时流处理等', span: 24 },
       { key: 'useScope', label: '数据使用范围', placeholder: '（如涉及数据使用）具体说明哪些部门和人员有权访问和使用数据，以及各自的权限级别', span: 24 },
@@ -696,6 +758,7 @@ const processingSections: ProcessingSection[] = [
     title: '数据提供',
     activity: 'PROVIDE',
     fields: [
+      { key: 'provideDataScope', label: '数据范围', placeholder: '具体涵盖的数据类型，包括但不限于个人信息、财务数据、运营数据、客户反馈、市场调研数据等', span: 24 },
       { key: 'providePurpose', label: '数据提供目的', placeholder: '（如涉及数据提供）数据共享或交易的目的，如市场分析、客户洞察、联合营销等', span: 24 },
       { key: 'provideMethod', label: '数据提供方式', placeholder: '（如涉及数据提供）具体的数据共享机制，如通过API接口、文件传输、数据同步等方式', span: 24 },
       { key: 'provideScope', label: '数据提供范围', placeholder: '（如涉及数据提供）数据类型、数据量、数据属性或字段', span: 24 },
@@ -708,6 +771,7 @@ const processingSections: ProcessingSection[] = [
     title: '数据公开',
     activity: 'PUBLIC',
     fields: [
+      { key: 'publicDataScope', label: '数据范围', placeholder: '具体涵盖的数据类型，包括但不限于个人信息、财务数据、运营数据、客户反馈、市场调研数据等', span: 24 },
       { key: 'publicPurpose', label: '数据公开目的', placeholder: '（如涉及数据公开）业务需求、法律合规、社会责任等', span: 24 },
       { key: 'publicMethod', label: '数据公开方式', placeholder: '（如涉及数据公开）官方网站、社交媒体、新闻媒体、数据门户、纸质报告等', span: 24 },
       { key: 'publicScope', label: '对象范围', placeholder: '（如涉及数据公开）公众、特定群体、政府机构、行业协会等', span: 24 },
@@ -720,6 +784,7 @@ const processingSections: ProcessingSection[] = [
     title: '数据删除',
     activity: 'DELETE',
     fields: [
+      { key: 'deletionDataScope', label: '数据范围', placeholder: '具体涵盖的数据类型，包括但不限于个人信息、财务数据、运营数据、客户反馈、市场调研数据等', span: 24 },
       { key: 'deletionScenarios', label: '数据删除情形', placeholder: '（如涉及数据删除）法律要求、业务需求、安全考虑、存储优化、用户请求、合同终止、业务调整等', span: 24 },
       { key: 'deletionMethod', label: '删除方式', placeholder: '（如涉及数据删除）逻辑删除、物理删除、安全擦除等', span: 24 },
       { key: 'dataArchive', label: '数据归档', placeholder: '（如涉及数据归档）描述归档的情况', span: 24 },
@@ -729,6 +794,7 @@ const processingSections: ProcessingSection[] = [
   {
     title: '数据出境',
     fields: [
+      { key: 'crossBorderDataScope', label: '数据范围', placeholder: '具体涵盖的数据类型，包括但不限于个人信息、财务数据、运营数据、客户反馈、市场调研数据等', span: 24 },
       { key: 'crossBorderPresence', label: '是否存在个人信息或重要数据出境', placeholder: '（如涉及数据出境）如跨境业务、跨境办公、境外上市、使用境外云服务或数据中心、国际交流合作等场景的数据出境情况', span: 24 },
       { key: 'crossBorderDescription', label: '数据出境情况说明', placeholder: '请输入数据出境的具体情况，如跨境业务、跨境办公、境外上市、使用境外云服务或数据中心、国际交流合作等', span: 24 }
     ]
@@ -876,6 +942,7 @@ function emptyProcessingSurvey(): ProcessingActivitySurvey {
     collectionContracts: '',
     collectionRelatedSystems: '',
     collectionPublicDeviceUsage: '',
+    storageDataScope: '',
     storageMethod: '',
     dataCenter: '',
     storageSystem: '',
@@ -883,10 +950,13 @@ function emptyProcessingSurvey(): ProcessingActivitySurvey {
     storageLocation: '',
     storageDuration: '',
     backupRedundancyStrategy: '',
+    transferDataScope: '',
+    transferDataLinkInventory: '',
     onlineChannel: '',
     offlineTransfer: '',
     transferProtocol: '',
     dataInterface: '',
+    useDataScope: '',
     usePurpose: '',
     useMethod: '',
     useScope: '',
@@ -895,22 +965,26 @@ function emptyProcessingSurvey(): ProcessingActivitySurvey {
     processingDetails: '',
     algorithmRecommendationService: '',
     entrustedOrJointProcessing: '',
+    provideDataScope: '',
     providePurpose: '',
     provideMethod: '',
     provideScope: '',
     dataRecipients: '',
     provideContracts: '',
     providedPersonalInfoAndImportantData: '',
+    publicDataScope: '',
     publicPurpose: '',
     publicMethod: '',
     publicScope: '',
     publicAudienceSize: '',
     publicDataTypes: '',
     publicDataScale: '',
+    deletionDataScope: '',
     deletionScenarios: '',
     deletionMethod: '',
     dataArchive: '',
     mediaDestruction: '',
+    crossBorderDataScope: '',
     crossBorderPresence: '',
     crossBorderDescription: ''
   };
@@ -1059,16 +1133,37 @@ async function loadBusiness() {
 }
 
 async function loadAssets() {
-  const [assets, personal, important, core] = await Promise.all([
-    surveyApi.listDataAssets(projectId),
-    surveyApi.listSpecialData(projectId, 'personal-info'),
-    surveyApi.listSpecialData(projectId, 'important-data'),
-    surveyApi.listSpecialData(projectId, 'core-data')
+  await Promise.all([
+    loadAssetList('data-assets'),
+    loadAssetList('personal-info'),
+    loadAssetList('important-data'),
+    loadAssetList('core-data')
   ]);
-  dataAssets.value = assets;
-  personalInfoRows.value = personal;
-  importantDataRows.value = important;
-  coreDataRows.value = core;
+}
+
+async function loadAssetList(type: AssetListKey) {
+  const page = assetPagination[type];
+  const query = { pageNo: page.pageNo, pageSize: page.pageSize };
+
+  if (type === 'data-assets') {
+    const result = await surveyApi.listDataAssets(projectId, query);
+    dataAssets.value = result.list;
+    Object.assign(page, result);
+    return;
+  }
+
+  const result = await surveyApi.listSpecialData(projectId, type, query);
+  rowListByType(type).value = result.list;
+  Object.assign(page, result);
+}
+
+function handleAssetPageChange(type: AssetListKey) {
+  void loadAssetList(type);
+}
+
+function handleAssetPageSizeChange(type: AssetListKey) {
+  assetPagination[type].pageNo = 1;
+  void loadAssetList(type);
 }
 
 async function loadProcessing() {
@@ -1134,6 +1229,7 @@ async function saveAssets() {
   await saveSpecialRows('personal-info', personalInfoRows.value);
   await saveSpecialRows('important-data', importantDataRows.value);
   await saveSpecialRows('core-data', coreDataRows.value);
+  await loadAssets();
   ElMessage.success('数据资产调研已保存');
 }
 
@@ -1314,6 +1410,12 @@ onMounted(load);
   color: #64748b;
   font-size: 13px;
   line-height: 1.7;
+}
+
+.survey-pagination {
+  display: flex;
+  justify-content: flex-end;
+  margin-top: 16px;
 }
 
 .inline-extra {

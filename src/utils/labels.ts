@@ -14,6 +14,19 @@ export const projectStatusTagType: Record<ProjectStatus, 'info' | 'warning' | 's
   ARCHIVED: 'info'
 };
 
+export const projectSystemTypeLabels: Record<string, string> = {
+  POWER_MONITORING_SYSTEM: '电力监控系统',
+  MANAGEMENT_INFO_SYSTEM: '管理信息系统',
+  COMMUNICATION_NETWORK_FACILITY: '通信网络设施',
+  DATA_RESOURCE: '数据资源',
+  OTHER_SYSTEM_PLATFORM: '其他系统平台'
+};
+
+export const formatProjectSystemType = (value?: string | null, fallback?: string | null) => {
+  if (!value) return fallback || '-';
+  return projectSystemTypeLabels[value] || fallback || value;
+};
+
 export const riskLevelLabels: Record<string, string> = {
   MAJOR: '重大',
   HIGH: '高',

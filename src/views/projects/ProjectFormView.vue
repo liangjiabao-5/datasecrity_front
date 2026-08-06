@@ -17,7 +17,7 @@
         style="margin-bottom: 18px"
       />
 
-      <el-form ref="formRef" :model="form" :rules="rules" label-width="160px" status-icon>
+      <el-form ref="formRef" :model="form" :rules="rules" :disabled="isEdit && !canEdit" label-width="160px" status-icon>
         <el-row :gutter="20">
           <el-col :xs="24" :md="12">
             <el-form-item label="项目名称" prop="projectName">
@@ -98,7 +98,7 @@
 
         <div class="form-footer">
           <el-button @click="router.push('/projects')">取消</el-button>
-          <el-button type="primary" :loading="saving" @click="submit">{{ isEdit ? '保存修改' : '创建项目' }}</el-button>
+          <el-button v-if="!isEdit || canEdit" type="primary" :loading="saving" @click="submit">{{ isEdit ? '保存修改' : '创建项目' }}</el-button>
         </div>
       </el-form>
     </div>
@@ -109,7 +109,6 @@
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox, FormInstance, FormRules } from 'element-plus';
-import { knowledgeApi } from '@/api/knowledgeApi';
 import { projectApi } from '@/api/projectApi';
 import type { ProjectConfigOptions, ProjectCreatePayload, ProjectDetail } from '@/types/project';
 
@@ -122,6 +121,7 @@ const route = useRoute();
 const formRef = ref<FormInstance>();
 const saving = ref(false);
 const original = ref<ProjectDetail | null>(null);
+const canEdit = ref(true);
 
 const isEdit = computed(() => props.mode === 'edit');
 const projectId = computed(() => String(route.params.projectId || ''));
@@ -208,9 +208,10 @@ const submit = async () => {
 };
 
 onMounted(async () => {
-  Object.assign(options, await knowledgeApi.getProjectConfigOptions());
+  Object.assign(options, await projectApi.configOptions());
   if (isEdit.value) {
     const detail = await projectApi.detail(projectId.value);
+    canEdit.value = Boolean(detail.canEdit);
     original.value = detail;
     assignFromDetail(detail);
   }

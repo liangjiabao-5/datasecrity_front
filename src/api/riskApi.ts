@@ -126,9 +126,12 @@ export const riskApi = {
     if (useMock) return workflowDb.refreshRisks(projectId, overwriteManualChanges);
     return http.post(`/projects/${projectId}/risk-summary/refresh`, { overwriteManualChanges });
   },
-  formOptions(projectId: string): Promise<RiskFormOptions> {
-    if (useMock) return workflowDb.getRiskFormOptions(projectId);
-    return http.get<RiskFormOptions>(`/projects/${projectId}/risk-form-options`);
+  formOptions(projectId: string, relatedActivities: string[] = []): Promise<RiskFormOptions> {
+    const activityValues = Array.from(new Set(relatedActivities.map((item) => item.trim()).filter(Boolean)));
+    if (useMock) return workflowDb.getRiskFormOptions(projectId, activityValues);
+    return http.get<RiskFormOptions>(`/projects/${projectId}/risk-form-options`, {
+      params: activityValues.length ? { relatedActivities: activityValues.join('、') } : undefined
+    });
   },
   getMergeStatus(projectId: string): Promise<RiskSummaryMergeState> {
     if (useMock) return workflowDb.getRiskSummaryMerge(projectId);

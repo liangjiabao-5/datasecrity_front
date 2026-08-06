@@ -8,6 +8,13 @@ export interface ProjectListItem {
   status: ProjectStatus;
   statusName: string;
   ownerName?: string;
+  ownerId?: string;
+  accessType?: 'ADMIN' | 'OWNER' | 'COLLABORATOR';
+  canView?: boolean;
+  canEdit?: boolean;
+  canManageMembers?: boolean;
+  canDelete?: boolean;
+  canTransferOwner?: boolean;
   assessmentPeriod?: string;
   createdAt?: string;
 }
@@ -73,12 +80,4 @@ export interface ProjectConfigOptions {
   harmModels: SelectOption[];
   scoreModels: SelectOption[];
   systemTypes: SelectOption[];
-}
-
-export interface SaveProjectTemplatePayload {
-  templateName: string;
-  templateDescription?: string;
-  includeAssessmentTemplate: boolean;
-  includeScoreModel: boolean;
-  includeTeamMembers: boolean;
 }

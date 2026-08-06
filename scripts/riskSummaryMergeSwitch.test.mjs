@@ -66,7 +66,26 @@ runTest('merge required field errors use the backend message directly', () => {
 runTest('merged rows keep manual edit and harm analysis actions available', () => {
   assert.doesNotMatch(summaryView, /:disabled="row\.merged"/);
   assert.doesNotMatch(summaryView, /row\.merged \|\| !hasHarmAnalysis\(row\)/);
-  assert.match(summaryView, /const targetRows = riskItems\.value\.filter\(\(row\) => row\.harmAnalysisStatus !== 'CONFIRMED'\)/);
+  assert.match(summaryView, /getHarmAnalysisDisplayStatus\(row\) === 'PENDING'/);
+});
+
+runTest('backend decision status and local suggestion draft status remain separate', () => {
+  assert.match(summaryView, /type HarmAnalysisDisplayStatus = HarmAnalysisStatus \| 'SUGGESTION_PENDING'/);
+  assert.match(summaryView, /PENDING: '待判定'/);
+  assert.match(summaryView, /SUGGESTION_PENDING: '建议待确认'/);
+  assert.match(summaryView, /hasHarmSuggestionDraft\(row\) \? 'SUGGESTION_PENDING'/);
+  assert.match(summaryView, /v-if="isHarmSuggestionDraftVisible"/);
+  assert.match(summaryView, /确认应用后判定状态将变为“已确认”/);
+});
+
+runTest('mock suggestions stay read-only until the user applies one', () => {
+  const singleSuggest = workflowDb.match(/async suggestRiskItemHarm[\s\S]*?async suggestRiskItemsHarm/)?.[0] || '';
+  const batchSuggest = workflowDb.match(/async suggestRiskItemsHarm[\s\S]*?async applyRiskItemHarm/)?.[0] || '';
+  assert.doesNotMatch(singleSuggest, /Object\.assign/);
+  assert.doesNotMatch(batchSuggest, /Object\.assign/);
+  assert.match(workflowDb, /computedHarmAnalysisStatus/);
+  assert.match(workflowDb, /if \(hasPersistedHarmAnalysisTrace\(record\)\) return 'CONFIRMED'/);
+  assert.match(workflowDb, /record\.harmLevel === '-' \? 'PENDING' : 'MANUAL'/);
 });
 
 runTest('merged row edits and applied harm analysis carry source record ids', () => {

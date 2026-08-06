@@ -8,8 +8,8 @@ export const useProjectStore = defineStore('project', {
     loading: false
   }),
   actions: {
-    async loadProject(projectId: string) {
-      if (this.currentProject?.id === projectId) {
+    async loadProject(projectId: string, force = false) {
+      if (!force && this.currentProject?.id === projectId) {
         return this.currentProject;
       }
       this.loading = true;

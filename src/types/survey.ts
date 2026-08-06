@@ -150,6 +150,7 @@ export interface ProcessingActivitySurvey {
   collectionContracts: string;
   collectionRelatedSystems: string;
   collectionPublicDeviceUsage: string;
+  storageDataScope: string;
   storageMethod: string;
   dataCenter: string;
   storageSystem: string;
@@ -157,10 +158,13 @@ export interface ProcessingActivitySurvey {
   storageLocation: string;
   storageDuration: string;
   backupRedundancyStrategy: string;
+  transferDataScope: string;
+  transferDataLinkInventory: string;
   onlineChannel: string;
   offlineTransfer: string;
   transferProtocol: string;
   dataInterface: string;
+  useDataScope: string;
   usePurpose: string;
   useMethod: string;
   useScope: string;
@@ -169,22 +173,26 @@ export interface ProcessingActivitySurvey {
   processingDetails: string;
   algorithmRecommendationService: string;
   entrustedOrJointProcessing: string;
+  provideDataScope: string;
   providePurpose: string;
   provideMethod: string;
   provideScope: string;
   dataRecipients: string;
   provideContracts: string;
   providedPersonalInfoAndImportantData: string;
+  publicDataScope: string;
   publicPurpose: string;
   publicMethod: string;
   publicScope: string;
   publicAudienceSize: string;
   publicDataTypes: string;
   publicDataScale: string;
+  deletionDataScope: string;
   deletionScenarios: string;
   deletionMethod: string;
   dataArchive: string;
   mediaDestruction: string;
+  crossBorderDataScope: string;
   crossBorderPresence: string;
   crossBorderDescription: string;
 }

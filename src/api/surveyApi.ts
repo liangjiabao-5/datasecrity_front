@@ -1,5 +1,5 @@
 import { workflowDb } from '@/mock/workflowDb';
-import type { PageResult } from '@/types/api';
+import type { PageQuery, PageResult } from '@/types/api';
 import type {
   BusinessSystemDiagramUploadResult,
   BusinessSystem,
@@ -15,8 +15,10 @@ import type {
 import { useMock } from '@/utils/env';
 import { http } from '@/utils/request';
 
+type SurveyPageQuery = Pick<PageQuery, 'pageNo' | 'pageSize'>;
 type SurveyListPayload<T> = Partial<PageResult<T>> & {
-  data?: T[];
+  content?: T[];
+  data?: SurveyListResponse<T>;
   records?: T[];
   rows?: T[];
 };
@@ -24,8 +26,47 @@ type SurveyListResponse<T> = SurveyListPayload<T> | T[] | null | undefined;
 
 const normalizeList = <T>(payload: SurveyListResponse<T>): T[] => {
   if (Array.isArray(payload)) return payload;
-  const list = payload?.list || payload?.records || payload?.rows || payload?.data || [];
-  return Array.isArray(list) ? list : [];
+  if (!payload || typeof payload !== 'object') return [];
+  const list = payload.list || payload.records || payload.rows || payload.content;
+  return Array.isArray(list) ? list : normalizeList(payload.data);
+};
+
+const resolveSurveyPageQuery = (query?: Partial<SurveyPageQuery>): SurveyPageQuery => ({
+  pageNo: query?.pageNo || 1,
+  pageSize: query?.pageSize || 10
+});
+
+const pageFromList = <T>(list: T[], query: SurveyPageQuery): PageResult<T> => {
+  const start = (query.pageNo - 1) * query.pageSize;
+  return {
+    list: list.slice(start, start + query.pageSize),
+    pageNo: query.pageNo,
+    pageSize: query.pageSize,
+    total: list.length
+  };
+};
+
+const normalizePage = <T>(payload: SurveyListResponse<T>, query?: Partial<SurveyPageQuery>): PageResult<T> => {
+  const resolvedQuery = resolveSurveyPageQuery(query);
+  if (Array.isArray(payload)) return pageFromList(payload, resolvedQuery);
+  if (!payload || typeof payload !== 'object') {
+    return { list: [], pageNo: resolvedQuery.pageNo, pageSize: resolvedQuery.pageSize, total: 0 };
+  }
+
+  const list = payload.list || payload.records || payload.rows || payload.content;
+  if (Array.isArray(list)) {
+    const pageNo = payload.pageNo || resolvedQuery.pageNo;
+    const pageSize = payload.pageSize || resolvedQuery.pageSize;
+    const total = typeof payload.total === 'number' ? payload.total : list.length;
+    return {
+      list: typeof payload.total === 'number' ? list : pageFromList(list, { pageNo, pageSize }).list,
+      pageNo,
+      pageSize,
+      total
+    };
+  }
+
+  return normalizePage(payload.data, resolvedQuery);
 };
 
 const emptyProcessingSurvey = (): ProcessingActivitySurvey => ({
@@ -39,6 +80,7 @@ const emptyProcessingSurvey = (): ProcessingActivitySurvey => ({
   collectionContracts: '',
   collectionRelatedSystems: '',
   collectionPublicDeviceUsage: '',
+  storageDataScope: '',
   storageMethod: '',
   dataCenter: '',
   storageSystem: '',
@@ -46,10 +88,13 @@ const emptyProcessingSurvey = (): ProcessingActivitySurvey => ({
   storageLocation: '',
   storageDuration: '',
   backupRedundancyStrategy: '',
+  transferDataScope: '',
+  transferDataLinkInventory: '',
   onlineChannel: '',
   offlineTransfer: '',
   transferProtocol: '',
   dataInterface: '',
+  useDataScope: '',
   usePurpose: '',
   useMethod: '',
   useScope: '',
@@ -58,22 +103,26 @@ const emptyProcessingSurvey = (): ProcessingActivitySurvey => ({
   processingDetails: '',
   algorithmRecommendationService: '',
   entrustedOrJointProcessing: '',
+  provideDataScope: '',
   providePurpose: '',
   provideMethod: '',
   provideScope: '',
   dataRecipients: '',
   provideContracts: '',
   providedPersonalInfoAndImportantData: '',
+  publicDataScope: '',
   publicPurpose: '',
   publicMethod: '',
   publicScope: '',
   publicAudienceSize: '',
   publicDataTypes: '',
   publicDataScale: '',
+  deletionDataScope: '',
   deletionScenarios: '',
   deletionMethod: '',
   dataArchive: '',
   mediaDestruction: '',
+  crossBorderDataScope: '',
   crossBorderPresence: '',
   crossBorderDescription: ''
 });
@@ -217,9 +266,12 @@ export const surveyApi = {
     if (useMock) return workflowDb.deleteBusinessSystem(projectId, id);
     return http.delete(`/projects/${projectId}/survey/business-systems/${id}`);
   },
-  listDataAssets(projectId: string): Promise<DataAsset[]> {
-    if (useMock) return workflowDb.listDataAssets(projectId);
-    return http.get<SurveyListResponse<DataAsset>>(`/projects/${projectId}/survey/data-assets`).then(normalizeList);
+  listDataAssets(projectId: string, query?: Partial<SurveyPageQuery>): Promise<PageResult<DataAsset>> {
+    const params = resolveSurveyPageQuery(query);
+    if (useMock) return workflowDb.listDataAssets(projectId, params);
+    return http
+      .get<SurveyListResponse<DataAsset>>(`/projects/${projectId}/survey/data-assets`, { params })
+      .then((payload) => normalizePage(payload, params));
   },
   saveDataAsset(projectId: string, payload: Omit<DataAsset, 'id'>, id?: string): Promise<DataAsset> {
     if (useMock) return workflowDb.saveDataAsset(projectId, payload, id);
@@ -231,9 +283,12 @@ export const surveyApi = {
     if (useMock) return workflowDb.deleteDataAsset(projectId, id);
     return http.delete(`/projects/${projectId}/survey/data-assets/${id}`);
   },
-  listSpecialData(projectId: string, type: SpecialDataType): Promise<SpecialDataRecord[]> {
-    if (useMock) return workflowDb.listSpecialData(projectId, type);
-    return http.get<SurveyListResponse<SpecialDataRecord>>(`/projects/${projectId}/survey/${type}`).then(normalizeList);
+  listSpecialData(projectId: string, type: SpecialDataType, query?: Partial<SurveyPageQuery>): Promise<PageResult<SpecialDataRecord>> {
+    const params = resolveSurveyPageQuery(query);
+    if (useMock) return workflowDb.listSpecialData(projectId, type, params);
+    return http
+      .get<SurveyListResponse<SpecialDataRecord>>(`/projects/${projectId}/survey/${type}`, { params })
+      .then((payload) => normalizePage(payload, params));
   },
   saveSpecialData(projectId: string, type: SpecialDataType, payload: Omit<SpecialDataRecord, 'id'>, id?: string): Promise<SpecialDataRecord> {
     if (useMock) return workflowDb.saveSpecialData(projectId, type, payload, id);

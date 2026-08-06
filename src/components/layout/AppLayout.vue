@@ -15,36 +15,33 @@
             <el-icon><FolderOpened /></el-icon>
             <span>项目管理</span>
           </el-menu-item>
-          <el-menu-item :index="projectPath('plan')">
-            <el-icon><Tickets /></el-icon>
-            <span>评估方案</span>
-          </el-menu-item>
-          <el-menu-item :index="projectPath('survey')">
-            <el-icon><Document /></el-icon>
-            <span>信息调研</span>
-          </el-menu-item>
-          <el-menu-item :index="projectPath('evaluation')">
-            <el-icon><EditPen /></el-icon>
-            <span>现场测评</span>
-          </el-menu-item>
-          <el-menu-item :index="projectPath('summary')">
-            <el-icon><TrendCharts /></el-icon>
-            <span>汇总分析</span>
-          </el-menu-item>
-          <el-menu-item :index="projectPath('reports')">
-            <el-icon><Files /></el-icon>
-            <span>报告管理</span>
-          </el-menu-item>
-          <el-menu-item index="/knowledge">
+          <el-menu-item v-if="auth.hasPermission('knowledge:manage')" index="/knowledge">
             <el-icon><Collection /></el-icon>
             <span>知识库管理</span>
           </el-menu-item>
-          <el-menu-item index="/settings">
+          <el-menu-item v-if="canOpenSettings" index="/settings">
             <el-icon><Setting /></el-icon>
             <span>系统设置</span>
           </el-menu-item>
         </el-menu>
       </nav>
+      <div class="sidebar-user">
+        <el-dropdown trigger="click" @command="handleUserCommand">
+          <button class="sidebar-user-button" type="button">
+            <span class="user-avatar">{{ auth.userName.slice(0, 1) }}</span>
+            <span class="sidebar-user-info">
+              <strong>{{ auth.userName }}</strong>
+              <small>{{ auth.roleName }}</small>
+            </span>
+          </button>
+          <template #dropdown>
+            <el-dropdown-menu>
+              <el-dropdown-item command="password"><el-icon><Lock /></el-icon>修改密码</el-dropdown-item>
+              <el-dropdown-item divided command="logout"><el-icon><SwitchButton /></el-icon>退出登录</el-dropdown-item>
+            </el-dropdown-menu>
+          </template>
+        </el-dropdown>
+      </div>
     </aside>
 
     <main class="main-panel">
@@ -53,38 +50,51 @@
           <strong>{{ pageTitle }}</strong>
           <span>{{ projectSubtitle }}</span>
         </div>
-        <div class="user-chip">
-          <span class="user-avatar">{{ auth.userName.slice(0, 1) }}</span>
-          <span>{{ auth.userName }} / {{ auth.roleName }}</span>
-        </div>
       </header>
 
       <section class="content-body">
         <RouterView />
       </section>
     </main>
+
+    <el-dialog v-model="passwordVisible" title="修改密码" width="440px" destroy-on-close>
+      <el-alert title="新密码须为 8-64 位，且同时包含字母和数字，不能包含空格。" type="info" :closable="false" style="margin-bottom: 16px" />
+      <el-form label-width="100px" @submit.prevent="changePassword">
+        <el-form-item label="当前密码" required><el-input v-model="passwordForm.oldPassword" type="password" show-password autocomplete="current-password" /></el-form-item>
+        <el-form-item label="新密码" required><el-input v-model="passwordForm.newPassword" type="password" show-password autocomplete="new-password" /></el-form-item>
+        <el-form-item label="确认新密码" required><el-input v-model="passwordForm.confirmPassword" type="password" show-password autocomplete="new-password" /></el-form-item>
+      </el-form>
+      <template #footer>
+        <el-button @click="passwordVisible = false">取消</el-button>
+        <el-button type="primary" :loading="passwordSaving" @click="changePassword">确认修改</el-button>
+      </template>
+    </el-dialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed } from 'vue';
-import { useRoute } from 'vue-router';
+import { computed, reactive, ref } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { ElMessage } from 'element-plus';
+import { authApi } from '@/api/authApi';
 import {
   Collection,
-  Document,
-  EditPen,
-  Files,
   FolderOpened,
+  Lock,
   Setting,
-  Tickets,
-  TrendCharts
+  SwitchButton
 } from '@element-plus/icons-vue';
 import { useAuthStore } from '@/stores/auth';
 import { useProjectStore } from '@/stores/project';
 
 const route = useRoute();
+const router = useRouter();
 const auth = useAuthStore();
 const projectStore = useProjectStore();
+const canOpenSettings = computed(() => auth.hasAnyPermission(['system:user:manage', 'system:role:manage', 'system:permission:read']));
+const passwordVisible = ref(false);
+const passwordSaving = ref(false);
+const passwordForm = reactive({ oldPassword: '', newPassword: '', confirmPassword: '' });
 
 const pageTitle = computed(() => String(route.meta.title || '数据安全风险评估'));
 const projectSubtitle = computed(() => {
@@ -92,18 +102,49 @@ const projectSubtitle = computed(() => {
   return projectName ? `当前项目：${projectName}` : '按项目流程完成调研、测评、汇总和报告生成';
 });
 
-const currentProjectId = computed(() => String(route.params.projectId || projectStore.currentProject?.id || 'p001'));
-
 const activeMenu = computed(() => {
   if (route.path.startsWith('/knowledge')) return '/knowledge';
   if (route.path.startsWith('/settings')) return '/settings';
-  if (route.path.includes('/plan')) return projectPath('plan');
-  if (route.path.includes('/survey')) return projectPath('survey');
-  if (route.path.includes('/evaluation')) return projectPath('evaluation');
-  if (route.path.includes('/summary')) return projectPath('summary');
-  if (route.path.includes('/reports')) return projectPath('reports');
   return '/projects';
 });
 
-const projectPath = (step: string) => `/projects/${currentProjectId.value}/${step}`;
+const handleUserCommand = async (command: string) => {
+  if (command === 'password') {
+    passwordForm.oldPassword = '';
+    passwordForm.newPassword = '';
+    passwordForm.confirmPassword = '';
+    passwordVisible.value = true;
+    return;
+  }
+  if (command === 'logout') {
+    await auth.logout();
+    ElMessage.success('已退出登录');
+    await router.replace('/login');
+  }
+};
+
+const changePassword = async () => {
+  const validPassword = /^(?=.*[A-Za-z])(?=.*\d)\S{8,64}$/;
+  if (!validPassword.test(passwordForm.newPassword)) {
+    ElMessage.warning('新密码须为 8-64 位，且同时包含字母和数字，不能包含空格');
+    return;
+  }
+  if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+    ElMessage.warning('两次输入的新密码不一致');
+    return;
+  }
+
+  passwordSaving.value = true;
+  try {
+    const result = await authApi.changePassword({ oldPassword: passwordForm.oldPassword, newPassword: passwordForm.newPassword });
+    if (result?.accessToken) {
+      if (result.user) auth.applySession(result as import('@/types/auth').AuthSession);
+      else auth.updateAccessToken(result.accessToken);
+    }
+    passwordVisible.value = false;
+    ElMessage.success('密码修改成功');
+  } finally {
+    passwordSaving.value = false;
+  }
+};
 </script>

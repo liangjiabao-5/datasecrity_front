@@ -114,10 +114,10 @@
                 <el-tag :type="levelTagType(row.harmLevel)" effect="plain">{{ formatAssessmentLevel(row.harmLevel) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="harmAnalysisStatus" label="判定状态" width="120">
+            <el-table-column prop="harmAnalysisStatus" label="判定状态" width="130">
               <template #default="{ row }">
-                <el-tag :type="harmAnalysisStatusTagType(row.harmAnalysisStatus)" effect="plain">
-                  {{ formatHarmAnalysisStatus(row.harmAnalysisStatus) }}
+                <el-tag :type="harmAnalysisStatusTagType(row)" effect="plain">
+                  {{ formatHarmAnalysisStatus(row) }}
                 </el-tag>
               </template>
             </el-table-column>
@@ -152,9 +152,11 @@
                   :loading="harmAnalyzingId === row.id"
                   @click="suggestRowHarm(row)"
                 >
-                  辅助判定
+                  {{ getHarmAnalysisDisplayStatus(row) === 'PENDING' ? '辅助判定' : '重新判定' }}
                 </el-button>
-                <el-button link :disabled="!hasHarmAnalysis(row)" @click="openHarmAnalysisDetail(row)">查看判定</el-button>
+                <el-button link :disabled="!hasHarmAnalysis(row)" @click="openHarmAnalysisDetail(row)">
+                  {{ hasHarmSuggestionDraft(row) ? '查看建议' : '查看判定' }}
+                </el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -242,26 +244,6 @@
           <el-form-item label="风险源描述">
             <el-input v-model="editForm.riskSourceDescription" type="textarea" :rows="3" />
           </el-form-item>
-          <el-form-item label="涉及的数据及类型、级别">
-            <el-select
-              v-model="sourceRelatedDataValues"
-              multiple
-              filterable
-              collapse-tags
-              placeholder="请选择涉及的数据及类型、级别"
-              style="width: 100%"
-            >
-              <el-option v-for="item in relatedDataSelectOptions" :key="item" :label="item" :value="item" />
-            </el-select>
-            <el-alert
-              v-if="!relatedDataOptions.length"
-              title="暂无数据资产选项，请先到信息调研维护数据类别和数据级别。"
-              type="info"
-              show-icon
-              :closable="false"
-              style="margin-top: 8px"
-            />
-          </el-form-item>
           <el-form-item label="涉及的数据处理活动">
             <el-select
               v-model="sourceRelatedActivityValues"
@@ -270,9 +252,39 @@
               collapse-tags
               placeholder="请选择涉及的数据处理活动"
               style="width: 100%"
+              @change="handleSourceRelatedActivitiesChange"
             >
               <el-option v-for="item in relatedActivitySelectOptions" :key="item" :label="item" :value="item" />
             </el-select>
+          </el-form-item>
+          <el-form-item label="涉及的数据及类型、级别">
+            <el-select
+              v-model="sourceRelatedDataValues"
+              multiple
+              filterable
+              collapse-tags
+              :disabled="!sourceRelatedActivityValues.length"
+              placeholder="请先选择涉及的数据处理活动"
+              style="width: 100%"
+            >
+              <el-option v-for="item in relatedDataSelectOptions" :key="item" :label="item" :value="item" />
+            </el-select>
+            <el-alert
+              v-if="!sourceRelatedActivityValues.length"
+              title="请先选择涉及的数据处理活动，再选择对应的数据及类型、级别。"
+              type="info"
+              show-icon
+              :closable="false"
+              style="margin-top: 8px"
+            />
+            <el-alert
+              v-else-if="!relatedDataOptions.length"
+              title="所选处理活动未匹配到数据资产，请到信息调研维护数据处理活动、数据类别和数据级别。"
+              type="info"
+              show-icon
+              :closable="false"
+              style="margin-top: 8px"
+            />
           </el-form-item>
         </template>
         <template v-if="activeTab === 'items'">
@@ -311,8 +323,16 @@
       </template>
     </el-dialog>
 
-    <el-dialog v-model="harmAnalysisVisible" title="风险危害程度辅助判定" width="860px">
+    <el-dialog v-model="harmAnalysisVisible" :title="harmAnalysisDialogTitle" width="860px">
       <template v-if="harmAnalysisSuggestion">
+        <el-alert
+          v-if="isHarmSuggestionDraftVisible"
+          title="当前为尚未写入风险清单的辅助判定建议，确认应用后判定状态将变为“已确认”。"
+          type="info"
+          show-icon
+          :closable="false"
+          style="margin-bottom: 16px"
+        />
         <el-alert
           v-if="harmAnalysisSuggestion.needsManualReview"
           title="当前建议需要人工复核后再应用。"
@@ -378,6 +398,7 @@
       <template #footer>
         <el-button @click="harmAnalysisVisible = false">关闭</el-button>
         <el-button
+          v-if="isHarmSuggestionDraftVisible"
           type="primary"
           :disabled="!harmAnalysisSuggestion || isEmptyLevel(harmAnalysisSuggestion.harmLevel)"
           :loading="harmApplying"
@@ -397,10 +418,9 @@ import { ElMessage, ElMessageBox } from 'element-plus';
 import type { UploadFile } from 'element-plus';
 import { DataAnalysis, Download, Refresh, Upload } from '@element-plus/icons-vue';
 import ProjectHeader from '@/components/ProjectHeader.vue';
-import { knowledgeApi } from '@/api/knowledgeApi';
 import { projectApi } from '@/api/projectApi';
 import { riskApi } from '@/api/riskApi';
-import type { RiskMatrix, RiskMatrixJson } from '@/types/knowledge';
+import type { RiskMatrixJson } from '@/types/knowledge';
 import type {
   HarmAnalysisStatus,
   HarmAnalysisSuggestion,
@@ -417,6 +437,7 @@ import { calculateRiskLevelByMatrix } from '@/utils/riskMatrix';
 type SummaryTab = 'sources' | 'items' | 'suggestions';
 type ImportableSummaryTab = Extract<SummaryTab, 'sources' | 'items'>;
 type EditForm = Partial<RiskSource & RiskItem & RiskSuggestion>;
+type HarmAnalysisDisplayStatus = HarmAnalysisStatus | 'SUGGESTION_PENDING';
 type SummaryPagination = {
   pageNo: number;
   pageSize: number;
@@ -499,10 +520,11 @@ const possibilityLabels: Record<string, string> = {
   LOW: '低'
 };
 
-const harmAnalysisStatusLabels: Record<HarmAnalysisStatus, string> = {
-  PENDING: '待确认',
+const harmAnalysisStatusLabels: Record<HarmAnalysisDisplayStatus, string> = {
+  PENDING: '待判定',
   CONFIRMED: '已确认',
-  MANUAL: '人工调整'
+  MANUAL: '人工填写',
+  SUGGESTION_PENDING: '建议待确认'
 };
 
 const llmStatusLabels: Record<string, string> = {
@@ -527,7 +549,7 @@ const linkedRiskItemLevel = (row: RiskItem) => row.riskLevel || '';
 const linkedEditRiskLevel = computed(() => calculateRiskLevel(editForm.possibilityLevel, editForm.harmLevel) || editForm.riskLevel || '');
 const uniqueValues = (values: Array<string | undefined | null>) =>
   Array.from(new Set(values.map((item) => String(item || '').trim()).filter(Boolean)));
-const relatedDataSelectOptions = computed(() => uniqueValues([...relatedDataOptions.value, ...sourceRelatedDataValues.value]));
+const relatedDataSelectOptions = computed(() => uniqueValues(relatedDataOptions.value));
 const relatedActivitySelectOptions = computed(() =>
   uniqueValues([...relatedActivityOptions.value, ...defaultRelatedActivityOptions, ...sourceRelatedActivityValues.value])
 );
@@ -538,10 +560,14 @@ const levelTagType = (value?: string) => {
   return 'success';
 };
 
-const formatHarmAnalysisStatus = (value?: HarmAnalysisStatus) => (value ? harmAnalysisStatusLabels[value] || value : '未判定');
-const harmAnalysisStatusTagType = (value?: HarmAnalysisStatus) => {
+const hasHarmSuggestionDraft = (row: RiskItem) => Boolean(harmAnalysisSuggestions.value[row.id]);
+const getHarmAnalysisDisplayStatus = (row: RiskItem): HarmAnalysisDisplayStatus =>
+  hasHarmSuggestionDraft(row) ? 'SUGGESTION_PENDING' : row.harmAnalysisStatus || 'PENDING';
+const formatHarmAnalysisStatus = (row: RiskItem) => harmAnalysisStatusLabels[getHarmAnalysisDisplayStatus(row)];
+const harmAnalysisStatusTagType = (row: RiskItem) => {
+  const value = getHarmAnalysisDisplayStatus(row);
   if (value === 'CONFIRMED') return 'success';
-  if (value === 'PENDING') return 'warning';
+  if (value === 'SUGGESTION_PENDING') return 'warning';
   if (value === 'MANUAL') return 'info';
   return 'info';
 };
@@ -599,14 +625,14 @@ const formatHarmTraceSteps = (trace?: HarmAnalysisTrace) =>
       evidence: []
     }
   ].filter((item) => item.content);
-const hasHarmAnalysis = (row: RiskItem) =>
-  Boolean(
-    harmAnalysisSuggestions.value[row.id] ||
-      row.harmDescription ||
-      row.harmImpactObject ||
-      row.harmExample ||
-      Object.keys(row.harmAnalysisTrace || {}).length
-  );
+const hasConfirmedHarmAnalysis = (row: RiskItem) => Object.keys(row.harmAnalysisTrace || {}).length > 0;
+const hasHarmAnalysis = (row: RiskItem) => hasHarmSuggestionDraft(row) || hasConfirmedHarmAnalysis(row);
+const isHarmSuggestionDraftVisible = computed(() =>
+  Boolean(harmAnalysisRiskItemId.value && harmAnalysisSuggestions.value[harmAnalysisRiskItemId.value])
+);
+const harmAnalysisDialogTitle = computed(() =>
+  isHarmSuggestionDraftVisible.value ? '风险危害程度辅助判定建议' : '已确认的风险危害程度判定'
+);
 
 const getErrorMessage = (error: unknown, fallback: string) => {
   if (error && typeof error === 'object' && 'message' in error) {
@@ -627,15 +653,21 @@ const splitRelatedData = (value?: string) =>
 const normalizeRelatedActivityValues = (value?: string[]) =>
   (value || []).map((item) => processingActivityLabels[item] || item).filter(Boolean);
 
-const fetchRiskFormOptions = async () => {
+const fetchRiskFormOptions = async (relatedActivities: string[] = []) => {
   try {
-    const options = await riskApi.formOptions(projectId);
+    const options = await riskApi.formOptions(projectId, relatedActivities);
     relatedDataOptions.value = uniqueValues(options.relatedDataOptions || []);
     relatedActivityOptions.value = uniqueValues(options.relatedActivityOptions || defaultRelatedActivityOptions);
   } catch (error) {
+    relatedDataOptions.value = [];
     relatedActivityOptions.value = defaultRelatedActivityOptions;
     ElMessage.warning(`风险源下拉选项加载失败：${getErrorMessage(error, '请稍后重试')}`);
   }
+};
+
+const handleSourceRelatedActivitiesChange = async () => {
+  sourceRelatedDataValues.value = [];
+  await fetchRiskFormOptions(sourceRelatedActivityValues.value);
 };
 
 const fetchMergeStatus = async () => {
@@ -749,13 +781,8 @@ const importRiskSummary = async (tab: ImportableSummaryTab, file: UploadFile) =>
 
 const loadProjectRiskMatrix = async () => {
   try {
-    const project = await projectApi.detail(projectId);
-    if (!project.riskMatrixId) {
-      projectRiskMatrix.value = {};
-      return;
-    }
-    const matrix = await knowledgeApi.detail<RiskMatrix>('matrix', project.riskMatrixId);
-    projectRiskMatrix.value = matrix.matrixJson || {};
+    const matrix = await projectApi.riskMatrix(projectId);
+    projectRiskMatrix.value = matrix?.matrixJson || {};
   } catch {
     projectRiskMatrix.value = {};
   }
@@ -764,7 +791,7 @@ const loadProjectRiskMatrix = async () => {
 const buildHarmSuggestionFromRow = (row: RiskItem): HarmAnalysisSuggestion | null => {
   const cached = harmAnalysisSuggestions.value[row.id];
   if (cached) return cached;
-  if (!hasHarmAnalysis(row)) return null;
+  if (!hasConfirmedHarmAnalysis(row)) return null;
 
   return {
     riskRecordId: row.id,
@@ -775,7 +802,7 @@ const buildHarmSuggestionFromRow = (row: RiskItem): HarmAnalysisSuggestion | nul
     harmAnalysisTrace: row.harmAnalysisTrace || {},
     harmAnalysisConfidence: row.harmAnalysisConfidence,
     harmAnalysisInputHash: row.harmAnalysisInputHash,
-    needsManualReview: row.harmAnalysisStatus === 'PENDING'
+    needsManualReview: false
   };
 };
 
@@ -805,12 +832,13 @@ const suggestRowHarm = async (row: RiskItem) => {
 };
 
 const suggestCurrentPageHarm = async () => {
-  const pendingRows = riskItems.value.filter(
-    (row) => row.harmAnalysisStatus !== 'PENDING' && row.harmAnalysisStatus !== 'CONFIRMED'
-  );
+  const pendingRows = riskItems.value.filter((row) => getHarmAnalysisDisplayStatus(row) === 'PENDING');
   const targetRows = pendingRows.slice(0, harmAnalysisBatchLimit);
   if (!targetRows.length) {
-    ElMessage.warning('当前页暂无待辅助判定的风险记录');
+    const draftCount = riskItems.value.filter(hasHarmSuggestionDraft).length;
+    ElMessage.warning(
+      draftCount ? '当前页待判定风险均已生成建议，请逐条查看并确认' : '当前页暂无待辅助判定的风险记录'
+    );
     return;
   }
 
@@ -879,7 +907,7 @@ const handlePageSizeChange = (tab: SummaryTab) => {
 const handleTabChange = async () => {
   if (activeTab.value === 'sources') {
     await fetchMergeStatus();
-    await fetchRiskFormOptions();
+    await fetchRiskFormOptions([]);
   }
   await load();
 };
@@ -945,7 +973,7 @@ const openEdit = (row: RiskSource | RiskItem | RiskSuggestion) => {
     if (!relatedActivityOptions.value.length) {
       relatedActivityOptions.value = defaultRelatedActivityOptions;
     }
-    void fetchRiskFormOptions();
+    void fetchRiskFormOptions(sourceRelatedActivityValues.value);
   }
   if (activeTab.value === 'items') {
     editForm.riskLevel = calculateRiskLevel(editForm.possibilityLevel, editForm.harmLevel);
@@ -989,7 +1017,7 @@ const saveEdit = async () => {
 onMounted(async () => {
   await loadProjectRiskMatrix();
   await fetchMergeStatus();
-  await fetchRiskFormOptions();
+  await fetchRiskFormOptions([]);
   await load();
 });
 </script>

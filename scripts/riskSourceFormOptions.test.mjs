@@ -16,22 +16,28 @@ function runTest(name, fn) {
   }
 }
 
-runTest('risk API exposes risk source form options from the backend endpoint', () => {
+runTest('risk API sends selected processing activities when loading related data options', () => {
   assert.match(riskTypes, /export interface RiskFormOptions/);
   assert.match(riskTypes, /relatedDataOptions: string\[\]/);
   assert.match(riskTypes, /relatedActivityOptions: string\[\]/);
-  assert.match(riskApi, /formOptions\(projectId: string\): Promise<RiskFormOptions>/);
+  assert.match(riskApi, /formOptions\(projectId: string, relatedActivities: string\[\] = \[\]\): Promise<RiskFormOptions>/);
   assert.match(riskApi, /risk-form-options/);
+  assert.match(riskApi, /relatedActivities: activityValues\.join\('\u3001'\)/);
   assert.match(workflowDb, /getRiskFormOptions/);
+  assert.match(workflowDb, /relatedDataOptionsByActivities/);
+  assert.match(workflowDb, /flowDescription\.includes\(activity\)/);
+  assert.match(workflowDb, /\$\{category\}\uff08\$\{levels\.join\('\u3001'\)\}\uff09/);
 });
 
-runTest('risk source edit dialog uses multi-select options for related data and activities', () => {
+runTest('risk source edit dialog refreshes data options after processing activity changes', () => {
   assert.match(summaryView, /const relatedDataOptions = ref<string\[\]>\(\[\]\)/);
   assert.match(summaryView, /const relatedActivityOptions = ref<string\[\]>\(\[\]\)/);
   assert.match(summaryView, /const sourceRelatedDataValues = ref<string\[\]>\(\[\]\)/);
   assert.match(summaryView, /const sourceRelatedActivityValues = ref<string\[\]>\(\[\]\)/);
-  assert.match(summaryView, /fetchRiskFormOptions/);
-  assert.match(summaryView, /riskApi\.formOptions\(projectId\)/);
+  assert.match(summaryView, /@change="handleSourceRelatedActivitiesChange"/);
+  assert.match(summaryView, /const handleSourceRelatedActivitiesChange = async \(\) => \{\s*sourceRelatedDataValues\.value = \[\];\s*await fetchRiskFormOptions\(sourceRelatedActivityValues\.value\);/);
+  assert.match(summaryView, /riskApi\.formOptions\(projectId, relatedActivities\)/);
+  assert.match(summaryView, /:disabled="!sourceRelatedActivityValues\.length"/);
   assert.match(summaryView, /splitRelatedData\(sourceRow\.relatedData\)/);
   assert.match(summaryView, /relatedData: sourceRelatedDataValues\.value/);
   assert.match(summaryView, /relatedActivities: sourceRelatedActivityValues\.value/);

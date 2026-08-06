@@ -22,6 +22,7 @@ import type { RiskMatrix, RiskMatrixJson, ScoreModel } from '@/types/knowledge';
 import type {
   HarmAnalysisApplyPayload,
   HarmAnalysisBatchPayload,
+  HarmAnalysisStatus,
   HarmAnalysisSuggestion,
   HarmAnalysisTrace,
   RiskItem,
@@ -89,6 +90,7 @@ const possibilityLevelLabels: Record<string, string> = {
 };
 
 type RiskSummaryQuery = Pick<PageQuery, 'pageNo' | 'pageSize'>;
+type SurveyPageQuery = Pick<PageQuery, 'pageNo' | 'pageSize'>;
 
 const resolveRiskSummaryQuery = (query?: Partial<RiskSummaryQuery>): RiskSummaryQuery => ({
   pageNo: query?.pageNo || 1,
@@ -97,6 +99,20 @@ const resolveRiskSummaryQuery = (query?: Partial<RiskSummaryQuery>): RiskSummary
 
 const pageRiskSummary = <T>(list: T[], query?: Partial<RiskSummaryQuery>): PageResult<T> => {
   const pageQuery = resolveRiskSummaryQuery(query);
+  const start = (pageQuery.pageNo - 1) * pageQuery.pageSize;
+  return {
+    list: list.slice(start, start + pageQuery.pageSize),
+    pageNo: pageQuery.pageNo,
+    pageSize: pageQuery.pageSize,
+    total: list.length
+  };
+};
+
+const pageSurveyList = <T>(list: T[], query?: Partial<SurveyPageQuery>): PageResult<T> => {
+  const pageQuery = {
+    pageNo: query?.pageNo || 1,
+    pageSize: query?.pageSize || 10
+  };
   const start = (pageQuery.pageNo - 1) * pageQuery.pageSize;
   return {
     list: list.slice(start, start + pageQuery.pageSize),
@@ -187,7 +203,7 @@ const dataAssets: Record<string, DataAsset[]> = {
       dataScale: '100万条',
       dataSource: '业务采集',
       storageLocation: '本地服务器',
-      flowDescription: '从 OA 系统流转至档案系统',
+      flowDescription: '收集、传输、存储：从 OA 系统流转至档案系统',
       classified: true,
       dataCategory: '个人信息-身份信息',
       dataLevel: '重要数据',
@@ -257,6 +273,7 @@ const processingActivitySurveys: Record<string, ProcessingActivitySurvey> = {
     collectionContracts: '已签署数据合作协议和保密协议',
     collectionRelatedSystems: 'OA 办公系统、客户管理系统',
     collectionPublicDeviceUsage: '不涉及公共场所图像采集设备',
+    storageDataScope: '个人信息、交易数据、运营数据',
     storageMethod: '集中式数据库存储',
     dataCenter: '北京主数据中心',
     storageSystem: 'MySQL、对象存储',
@@ -264,10 +281,13 @@ const processingActivitySurveys: Record<string, ProcessingActivitySurvey> = {
     storageLocation: '本地服务器',
     storageDuration: '按业务和监管要求保存',
     backupRedundancyStrategy: '全量备份、增量备份、异地冗余',
+    transferDataScope: '个人信息、交易数据、运营数据',
+    transferDataLinkInventory: '客户管理系统→数据交换平台→数据仓库',
     onlineChannel: 'HTTPS、VPN 专线',
     offlineTransfer: '不涉及',
     transferProtocol: 'HTTPS、SFTP、TLS',
     dataInterface: 'RESTful API，OAuth 认证和访问控制',
+    useDataScope: '个人信息、交易数据、运营数据',
     usePurpose: '支撑内部办公和流程流转',
     useMethod: '查询、统计分析、批量导出',
     useScope: '办公室、信息中心授权人员',
@@ -276,22 +296,26 @@ const processingActivitySurveys: Record<string, ProcessingActivitySurvey> = {
     processingDetails: '统计分析、数据清洗和报表生成',
     algorithmRecommendationService: '不涉及',
     entrustedOrJointProcessing: '不涉及核心数据、重要数据或个人信息委托处理',
+    provideDataScope: '',
     providePurpose: '',
     provideMethod: '',
     provideScope: '',
     dataRecipients: '',
     provideContracts: '',
     providedPersonalInfoAndImportantData: '',
+    publicDataScope: '',
     publicPurpose: '',
     publicMethod: '',
     publicScope: '',
     publicAudienceSize: '',
     publicDataTypes: '',
     publicDataScale: '',
+    deletionDataScope: '超过保存期限的客户信息',
     deletionScenarios: '达到保存期限或用户请求删除',
     deletionMethod: '逻辑删除、物理删除和安全擦除',
     dataArchive: '按档案要求归档审计材料',
     mediaDestruction: '磁盘消磁或物理粉碎',
+    crossBorderDataScope: '',
     crossBorderPresence: '不涉及个人信息或重要数据出境',
     crossBorderDescription: ''
   }
@@ -389,6 +413,16 @@ const evaluationItems: Record<string, EvaluationItem[]> = {
 };
 
 type RiskRecord = RiskSource & RiskItem & RiskSuggestion;
+const hasPersistedHarmAnalysisTrace = (record: Pick<RiskItem, 'harmAnalysisTrace'>) =>
+  Object.keys(record.harmAnalysisTrace || {}).length > 0;
+const computedHarmAnalysisStatus = (record: Pick<RiskItem, 'harmAnalysisTrace' | 'harmLevel'>): HarmAnalysisStatus => {
+  if (hasPersistedHarmAnalysisTrace(record)) return 'CONFIRMED';
+  return !record.harmLevel || record.harmLevel === '-' ? 'PENDING' : 'MANUAL';
+};
+const withComputedHarmAnalysisStatus = (record: RiskRecord): RiskRecord => ({
+  ...record,
+  harmAnalysisStatus: computedHarmAnalysisStatus(record)
+});
 type RiskSourceTemplate = {
   sheetName: string;
   category: string;
@@ -456,7 +490,32 @@ const inferRelatedActivities = (item: EvaluationItem): string[] => {
 
 const defaultRelatedActivityOptions = ['收集', '传输', '存储', '使用和加工', '提供', '公开', '删除'];
 
-const relatedDataOptionSeeds = ['个人信息-联系方式/L2', '交易数据/L3'];
+const normalizeActivityName = (value: string) => processingActivityLabels[value] || value.trim();
+
+const relatedDataOptionsByActivities = (projectId: string, relatedActivities: string[]) => {
+  const activityNames = new Set(relatedActivities.map(normalizeActivityName).filter(Boolean));
+  if (!activityNames.size) return [];
+
+  const levelsByCategory = new Map<string, string[]>();
+  ensure(dataAssets, projectId, []).forEach((asset) => {
+    const flowDescription = asset.flowDescription || '';
+    if (!Array.from(activityNames).some((activity) => flowDescription.includes(activity))) return;
+
+    const categoryParts = asset.dataCategory
+      .split('-')
+      .map((item) => item.trim())
+      .filter(Boolean);
+    const category = categoryParts.slice(0, 2).join('-');
+    const level = asset.dataLevel.trim();
+    if (!category || !level) return;
+
+    const levels = levelsByCategory.get(category) || [];
+    if (!levels.includes(level)) levels.push(level);
+    levelsByCategory.set(category, levels);
+  });
+
+  return Array.from(levelsByCategory, ([category, levels]) => `${category}（${levels.join('、')}）`);
+};
 
 const normalizeRelatedDataPayload = (value: unknown) => {
   if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean).join('、');
@@ -783,7 +842,6 @@ const buildRiskRecord = (
     harmAnalysisTrace: canReuseExisting ? existing?.harmAnalysisTrace : undefined,
     harmAnalysisConfidence: canReuseExisting ? existing?.harmAnalysisConfidence : undefined,
     harmAnalysisInputHash: canReuseExisting ? existing?.harmAnalysisInputHash : undefined,
-    harmAnalysisStatus: canReuseExisting ? existing?.harmAnalysisStatus : undefined,
     possibilityLevel: nextPossibilityLevel,
     riskLevel: applyRiskMatrix(riskMatrix, nextPossibilityLevel, nextHarmLevel),
     remediationSuggestion: canReuseExisting
@@ -887,8 +945,8 @@ export const workflowDb = {
     remove(ensure(businessSystems, projectId, []), id);
     return delay(undefined);
   },
-  listDataAssets(projectId: string) {
-    return delay(ensure(dataAssets, projectId, []));
+  listDataAssets(projectId: string, query?: Partial<SurveyPageQuery>) {
+    return delay(pageSurveyList(ensure(dataAssets, projectId, []), query));
   },
   saveDataAsset(projectId: string, payload: Omit<DataAsset, 'id'>, id?: string) {
     return delay(upsert(ensure(dataAssets, projectId, []), payload, id));
@@ -897,8 +955,8 @@ export const workflowDb = {
     remove(ensure(dataAssets, projectId, []), id);
     return delay(undefined);
   },
-  listSpecialData(projectId: string, type: SpecialDataType) {
-    return delay(ensure(specialData[type], projectId, []));
+  listSpecialData(projectId: string, type: SpecialDataType, query?: Partial<SurveyPageQuery>) {
+    return delay(pageSurveyList(ensure(specialData[type], projectId, []), query));
   },
   saveSpecialData(projectId: string, type: SpecialDataType, payload: Omit<SpecialDataRecord, 'id'>, id?: string) {
     return delay(upsert(ensure(specialData[type], projectId, []), payload, id));
@@ -930,6 +988,7 @@ export const workflowDb = {
         collectionContracts: '',
         collectionRelatedSystems: '',
         collectionPublicDeviceUsage: '',
+        storageDataScope: '',
         storageMethod: '',
         dataCenter: '',
         storageSystem: '',
@@ -937,10 +996,13 @@ export const workflowDb = {
         storageLocation: '',
         storageDuration: '',
         backupRedundancyStrategy: '',
+        transferDataScope: '',
+        transferDataLinkInventory: '',
         onlineChannel: '',
         offlineTransfer: '',
         transferProtocol: '',
         dataInterface: '',
+        useDataScope: '',
         usePurpose: '',
         useMethod: '',
         useScope: '',
@@ -949,22 +1011,26 @@ export const workflowDb = {
         processingDetails: '',
         algorithmRecommendationService: '',
         entrustedOrJointProcessing: '',
+        provideDataScope: '',
         providePurpose: '',
         provideMethod: '',
         provideScope: '',
         dataRecipients: '',
         provideContracts: '',
         providedPersonalInfoAndImportantData: '',
+        publicDataScope: '',
         publicPurpose: '',
         publicMethod: '',
         publicScope: '',
         publicAudienceSize: '',
         publicDataTypes: '',
         publicDataScale: '',
+        deletionDataScope: '',
         deletionScenarios: '',
         deletionMethod: '',
         dataArchive: '',
         mediaDestruction: '',
+        crossBorderDataScope: '',
         crossBorderPresence: '',
         crossBorderDescription: ''
       };
@@ -1058,18 +1124,10 @@ export const workflowDb = {
     riskSummaryMergeStates[projectId] = true;
     return delay(buildRiskSummaryMergeUpdateResult(records));
   },
-  async getRiskFormOptions(projectId: string) {
+  async getRiskFormOptions(projectId: string, relatedActivities: string[] = []) {
     await seedRisks(projectId);
-    const relatedDataOptions = Array.from(
-      new Set(
-        [...relatedDataOptionSeeds, ...(riskRecords[projectId] || []).map((row) => row.relatedData || '')]
-          .flatMap((value) => String(value || '').split('、'))
-          .map((value) => value.trim())
-          .filter((value) => value && value !== '-')
-      )
-    );
     return delay({
-      relatedDataOptions,
+      relatedDataOptions: relatedDataOptionsByActivities(projectId, relatedActivities),
       relatedActivityOptions: defaultRelatedActivityOptions
     });
   },
@@ -1082,7 +1140,7 @@ export const workflowDb = {
   async listRiskItems(projectId: string, query?: Partial<RiskSummaryQuery>) {
     await seedRisks(projectId);
     const records = riskSummaryMergeStates[projectId] ? mergeRiskRecords(riskRecords[projectId] || []) : riskRecords[projectId] || [];
-    return delay(pageRiskSummary(records as RiskItem[], query));
+    return delay(pageRiskSummary(records.map(withComputedHarmAnalysisStatus) as RiskItem[], query));
   },
   async saveRiskItem(projectId: string, id: string, payload: RiskItemSavePayload) {
     await seedRisks(projectId);
@@ -1094,8 +1152,7 @@ export const workflowDb = {
       const nextPossibilityLevel = payload.possibilityLevel ?? item.possibilityLevel;
       Object.assign(item, nextPayload, {
         riskLevel: applyRiskMatrix(riskMatrix, nextPossibilityLevel, nextHarmLevel),
-        manualAdjusted: true,
-        harmAnalysisStatus: payload.harmLevel ? 'MANUAL' : item.harmAnalysisStatus
+        manualAdjusted: true
       });
     });
     return delay(undefined);
@@ -1105,15 +1162,6 @@ export const workflowDb = {
     const item = riskRecords[projectId].find((row) => row.id === id);
     if (!item) throw { code: 'RISK_ITEM_NOT_FOUND', message: '风险记录不存在' };
     const suggestion = await buildHarmAnalysisSuggestion(projectId, item);
-    Object.assign(item, {
-      harmDescription: suggestion.harmDescription,
-      harmImpactObject: suggestion.harmImpactObject,
-      harmExample: suggestion.harmExample,
-      harmAnalysisTrace: suggestion.harmAnalysisTrace,
-      harmAnalysisConfidence: suggestion.harmAnalysisConfidence,
-      harmAnalysisInputHash: suggestion.harmAnalysisInputHash,
-      harmAnalysisStatus: 'PENDING'
-    });
     return delay(suggestion);
   },
   async suggestRiskItemsHarm(projectId: string, payload: HarmAnalysisBatchPayload) {
@@ -1121,22 +1169,9 @@ export const workflowDb = {
     const all = riskRecords[projectId] || [];
     const idSet = new Set(payload.riskItemIds || []);
     const targetRows = all
-      .filter((row) => row.harmAnalysisStatus !== 'CONFIRMED')
       .filter((row) => !idSet.size || idSet.has(row.id))
       .slice(0, payload.limit || 20);
     const suggestions = await Promise.all(targetRows.map((row) => buildHarmAnalysisSuggestion(projectId, row)));
-    targetRows.forEach((row, index) => {
-      const suggestion = suggestions[index];
-      Object.assign(row, {
-        harmDescription: suggestion.harmDescription,
-        harmImpactObject: suggestion.harmImpactObject,
-        harmExample: suggestion.harmExample,
-        harmAnalysisTrace: suggestion.harmAnalysisTrace,
-        harmAnalysisConfidence: suggestion.harmAnalysisConfidence,
-        harmAnalysisInputHash: suggestion.harmAnalysisInputHash,
-        harmAnalysisStatus: 'PENDING'
-      });
-    });
     return delay(suggestions);
   },
   async applyRiskItemHarm(projectId: string, id: string, payload: HarmAnalysisApplyPayload) {
@@ -1160,7 +1195,6 @@ export const workflowDb = {
         harmAnalysisTrace: suggestion.harmAnalysisTrace,
         harmAnalysisConfidence: suggestion.harmAnalysisConfidence,
         harmAnalysisInputHash: suggestion.harmAnalysisInputHash,
-        harmAnalysisStatus: 'CONFIRMED',
         riskLevel: applyRiskMatrix(riskMatrix, target.possibilityLevel, suggestion.harmLevel),
         manualAdjusted: true
       });

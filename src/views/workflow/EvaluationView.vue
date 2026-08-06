@@ -42,7 +42,7 @@
 
         <div class="toolbar">
           <div class="table-actions">
-            <span class="muted">已选 {{ selectedRows.length }} 条</span>
+            <span class="muted">批量修改符合情况-已选 {{ selectedRows.length }} 条</span>
             <el-select v-model="batchResultValue" placeholder="批量符合情况" style="width: 160px">
               <el-option v-for="item in resultOptions" :key="item.value" :label="item.label" :value="item.value" />
             </el-select>
