@@ -9,9 +9,13 @@ import type {
   EvaluationRecordPayload,
   ScoreResult
 } from '@/types/evaluation';
-import { apiBaseUrl } from '@/utils/env';
 import { useMock } from '@/utils/env';
 import { http } from '@/utils/request';
+
+const excelBlob = (payload: unknown) =>
+  new Blob([JSON.stringify(payload, null, 2)], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+  });
 
 export const evaluationApi = {
   catalog(projectId: string): Promise<EvaluationCatalogNode[]> {
@@ -34,11 +38,23 @@ export const evaluationApi = {
     if (useMock) return workflowDb.calculateScore(projectId);
     return http.post(`/projects/${projectId}/evaluation/calculate-score`);
   },
-  exportTemplateUrl(projectId: string): string {
-    return `${apiBaseUrl}/projects/${projectId}/evaluation/export-template`;
+  exportTemplate(projectId: string): Promise<{ blob: Blob; fileName?: string }> {
+    if (useMock) {
+      return Promise.resolve({
+        blob: excelBlob({ projectId, template: '现场测评导入模板' }),
+        fileName: `现场测评导入模板-${projectId}.xlsx`
+      });
+    }
+    return http.blobFile(`/projects/${projectId}/evaluation/export-template`, { timeout: 60000 });
   },
-  exportUrl(projectId: string): string {
-    return `${apiBaseUrl}/projects/${projectId}/evaluation/export`;
+  exportRecords(projectId: string): Promise<{ blob: Blob; fileName?: string }> {
+    if (useMock) {
+      return Promise.resolve({
+        blob: excelBlob({ projectId, export: '现场测评记录' }),
+        fileName: `现场测评记录-${projectId}.xlsx`
+      });
+    }
+    return http.blobFile(`/projects/${projectId}/evaluation/export`, { timeout: 60000 });
   },
   importRecords(projectId: string, file: File): Promise<EvaluationImportResult> {
     if (useMock) {

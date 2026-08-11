@@ -3,11 +3,11 @@
     <ProjectHeader current-step="evaluation" />
 
     <div class="workflow-panel-actions">
-      <el-button :icon="Download" @click="exportTemplate">导出模板</el-button>
+      <el-button :icon="Download" :loading="exportingTemplate" @click="exportTemplate">导出模板</el-button>
       <el-upload :auto-upload="false" :show-file-list="false" accept=".xlsx,.xls,.json" :on-change="importRecords">
         <el-button :icon="Upload">导入</el-button>
       </el-upload>
-      <el-button :icon="Download" @click="exportRecords">导出</el-button>
+      <el-button :icon="Download" :loading="exportingRecords" @click="exportRecords">导出</el-button>
       <el-button type="primary" :icon="DataAnalysis" @click="calculateScore">分数计算</el-button>
       <el-button type="success" @click="router.push(`/projects/${projectId}/summary`)">下一步</el-button>
     </div>
@@ -171,6 +171,7 @@ import ProjectHeader from '@/components/ProjectHeader.vue';
 import { evaluationApi } from '@/api/evaluationApi';
 import type { EvaluationImportError, EvaluationItem, EvaluationItemQuery, EvaluationRecordPayload, ScoreResult } from '@/types/evaluation';
 import type { EvaluationResult } from '@/types/workflow';
+import { downloadBlobFile } from '@/utils/fileActions';
 import { normalizeEvaluationImportResult } from '@/utils/evaluationImportResult';
 
 const route = useRoute();
@@ -184,6 +185,8 @@ const total = ref(0);
 const editVisible = ref(false);
 const scoreVisible = ref(false);
 const importErrorVisible = ref(false);
+const exportingTemplate = ref(false);
+const exportingRecords = ref(false);
 const editingItemId = ref('');
 const inlineSavingId = ref('');
 const batchResultValue = ref<EvaluationResult>('COMPLIANT');
@@ -400,12 +403,30 @@ const calculateScore = async () => {
   scoreVisible.value = true;
 };
 
-const exportTemplate = () => {
-  window.open(evaluationApi.exportTemplateUrl(projectId), '_blank');
+const exportTemplate = async () => {
+  exportingTemplate.value = true;
+  try {
+    const { blob, fileName } = await evaluationApi.exportTemplate(projectId);
+    downloadBlobFile(fileName || `现场测评导入模板-${projectId}.xlsx`, blob);
+    ElMessage.success('现场测评导入模板已导出');
+  } catch (error) {
+    ElMessage.error(`现场测评导入模板导出失败：${getErrorMessage(error, '请稍后重试')}`);
+  } finally {
+    exportingTemplate.value = false;
+  }
 };
 
-const exportRecords = () => {
-  window.open(evaluationApi.exportUrl(projectId), '_blank');
+const exportRecords = async () => {
+  exportingRecords.value = true;
+  try {
+    const { blob, fileName } = await evaluationApi.exportRecords(projectId);
+    downloadBlobFile(fileName || `现场测评记录-${projectId}.xlsx`, blob);
+    ElMessage.success('现场测评记录已导出');
+  } catch (error) {
+    ElMessage.error(`现场测评记录导出失败：${getErrorMessage(error, '请稍后重试')}`);
+  } finally {
+    exportingRecords.value = false;
+  }
 };
 
 const getErrorMessage = (error: unknown, fallback: string) => {
