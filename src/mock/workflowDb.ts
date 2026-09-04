@@ -29,6 +29,7 @@ import type {
   RiskItemSavePayload,
   RiskSummaryMergeState,
   RiskSummaryMergeUpdateResult,
+  RiskSummaryRefreshResult,
   RiskSource,
   RiskSourceSavePayload,
   RiskSuggestion,
@@ -517,13 +518,26 @@ const relatedDataOptionsByActivities = (projectId: string, relatedActivities: st
   return Array.from(levelsByCategory, ([category, levels]) => `${category}（${levels.join('、')}）`);
 };
 
+/** 模拟服务端维护的“国标指标—处理活动”映射与项目调研活动交集。 */
+const defaultRiskSourceActivities = (projectId: string, item: EvaluationItem) => {
+  const involvedActivities = new Set<string>(processingActivitySurveys[projectId]?.involvedActivities || []);
+  return inferRelatedActivities(item)
+    .filter((activity) => involvedActivities.has(activity))
+    .map((activity) => processingActivityLabels[activity] || activity);
+};
+
+const defaultRiskSourceRelatedData = (projectId: string, relatedActivities: string[]) =>
+  relatedDataOptionsByActivities(projectId, relatedActivities).join('、') || '-';
+
 const normalizeRelatedDataPayload = (value: unknown) => {
   if (Array.isArray(value)) return value.map((item) => String(item || '').trim()).filter(Boolean).join('、');
   return value;
 };
 
 const normalizeRiskSourcePayload = (payload: RiskSourceSavePayload): Partial<Omit<RiskSource, 'id'>> => {
-  const { relatedData, ...restPayload } = payload;
+  const { relatedData, manualAdjusted: _manualAdjusted, ...restPayload } = payload as RiskSourceSavePayload & {
+    manualAdjusted?: boolean;
+  };
   const nextPayload: Partial<Omit<RiskSource, 'id'>> = { ...restPayload };
   if ('relatedData' in payload) {
     nextPayload.relatedData = normalizeRelatedDataPayload(relatedData) as string;
@@ -648,10 +662,13 @@ const resolveRiskRecordTargets = (records: RiskRecord[], id: string, mergedRiskR
   return records.filter((record) => targetIds.has(record.id));
 };
 
-const stripMergeTargetPayload = <T extends { mergedRiskRecordIds?: string[] }>(payload: T) => {
-  const { mergedRiskRecordIds, ...restPayload } = payload;
+const stripMergeTargetPayload = <T extends { mergedRiskRecordIds?: string[]; manualAdjusted?: boolean }>(payload: T) => {
+  const { mergedRiskRecordIds, manualAdjusted: _manualAdjusted, ...restPayload } = payload;
   return restPayload;
 };
+
+const hasRiskRecordChange = (record: RiskRecord, payload: Record<string, unknown>) =>
+  Object.entries(payload).some(([key, value]) => JSON.stringify(record[key as keyof RiskRecord]) !== JSON.stringify(value));
 
 const calculateProjectScore = async (projectId: string): Promise<ScoreResult> => {
   const all = ensure(evaluationItems, projectId, []);
@@ -805,6 +822,7 @@ const applyRiskMatrix = (riskMatrix: RiskMatrixJson, possibilityLevel?: string, 
   calculateRiskLevelByMatrix(riskMatrix, possibilityLevel, harmLevel);
 
 const buildRiskRecord = (
+  projectId: string,
   item: EvaluationItem,
   existing: RiskRecord | undefined,
   possibilityLevel: string,
@@ -816,6 +834,8 @@ const buildRiskRecord = (
   const canReuseExisting = Boolean(existing && (!existing.manualAdjusted || preserveManual));
   const nextHarmLevel = canReuseExisting ? existing?.harmLevel || '-' : '-';
   const nextPossibilityLevel = preserveManual ? existing?.possibilityLevel || '-' : possibilityLevel || '-';
+  const calculatedRelatedActivities = defaultRiskSourceActivities(projectId, item);
+  const calculatedRelatedData = defaultRiskSourceRelatedData(projectId, calculatedRelatedActivities);
 
   return {
     id: existing?.id || `risk-${item.id}`,
@@ -827,14 +847,19 @@ const buildRiskRecord = (
     checkPoint: item.checkPoint,
     evaluationRecord: item.evaluationRecord,
     evaluationResult: item.evaluationResult,
+    implementationPoints: item.checkContent || item.checkPoint,
+    analysisStatus: 'SUCCESS',
+    analysisErrorMessage: null,
+    analysisProvider: 'mock-ai',
+    analysisModel: 'mock-dynamic-risk-v1',
     riskTypes: canReuseExisting && existing?.riskTypes?.length ? existing.riskTypes : template?.riskTypes || [],
     riskDescription: canReuseExisting ? existing?.riskDescription ?? template?.riskDescription ?? '' : template?.riskDescription ?? '',
     riskSourceDescription: canReuseExisting
       ? existing?.riskSourceDescription ?? template?.riskSourceDescription ?? ''
       : template?.riskSourceDescription ?? '',
     riskSourceType: template?.riskSourceType || null,
-    relatedData: canReuseExisting ? existing?.relatedData || '-' : '-',
-    relatedActivities: canReuseExisting && existing?.relatedActivities?.length ? existing.relatedActivities : inferRelatedActivities(item),
+    relatedData: preserveManual ? existing?.relatedData || '-' : calculatedRelatedData,
+    relatedActivities: preserveManual ? existing?.relatedActivities || [] : calculatedRelatedActivities,
     harmLevel: nextHarmLevel,
     harmDescription: canReuseExisting ? existing?.harmDescription : undefined,
     harmImpactObject: canReuseExisting ? existing?.harmImpactObject : undefined,
@@ -862,6 +887,7 @@ const seedRisks = async (projectId: string, overwriteManualChanges = false) => {
     .filter((item) => item.evaluationResult === 'NON_COMPLIANT' || item.evaluationResult === 'PARTIAL')
     .map((item) =>
       buildRiskRecord(
+        projectId,
         item,
         existingByEvaluationItem.get(item.id) || existingByEvaluationItem.get(item.code),
         scoreResult.possibilityLevel,
@@ -1093,7 +1119,17 @@ export const workflowDb = {
   },
   async refreshRisks(projectId: string, overwriteManualChanges = false) {
     await seedRisks(projectId, overwriteManualChanges);
-    return delay({ refreshed: true });
+    const records = riskRecords[projectId] || [];
+    const result: RiskSummaryRefreshResult = {
+      createdRecords: records.length,
+      updatedRecords: 0,
+      inactiveRecords: 0,
+      retainedManualRecords: overwriteManualChanges ? 0 : records.filter((record) => record.manualAdjusted).length,
+      analysisSuccessRecords: records.length,
+      analysisDisabledRecords: 0,
+      analysisFailedRecords: 0
+    };
+    return delay(result);
   },
   async listRiskSources(projectId: string, query?: Partial<RiskSummaryQuery>) {
     await seedRisks(projectId);
@@ -1134,7 +1170,10 @@ export const workflowDb = {
   async saveRiskSource(projectId: string, id: string, payload: RiskSourceSavePayload) {
     await seedRisks(projectId);
     const item = riskRecords[projectId].find((row) => row.id === id);
-    if (item) Object.assign(item, normalizeRiskSourcePayload(payload), { manualAdjusted: true });
+    if (item) {
+      const nextPayload = normalizeRiskSourcePayload(payload);
+      if (hasRiskRecordChange(item, nextPayload)) Object.assign(item, nextPayload, { manualAdjusted: true });
+    }
     return delay(undefined);
   },
   async listRiskItems(projectId: string, query?: Partial<RiskSummaryQuery>) {
@@ -1150,10 +1189,11 @@ export const workflowDb = {
     targets.forEach((item) => {
       const nextHarmLevel = payload.harmLevel ?? item.harmLevel;
       const nextPossibilityLevel = payload.possibilityLevel ?? item.possibilityLevel;
-      Object.assign(item, nextPayload, {
-        riskLevel: applyRiskMatrix(riskMatrix, nextPossibilityLevel, nextHarmLevel),
-        manualAdjusted: true
-      });
+      const nextRecordPayload = {
+        ...nextPayload,
+        riskLevel: applyRiskMatrix(riskMatrix, nextPossibilityLevel, nextHarmLevel)
+      };
+      if (hasRiskRecordChange(item, nextRecordPayload)) Object.assign(item, nextRecordPayload, { manualAdjusted: true });
     });
     return delay(undefined);
   },
@@ -1187,7 +1227,7 @@ export const workflowDb = {
       throw { code: 'HARM_ANALYSIS_STALE', message: '风险输入已变化，请重新生成危害程度建议' };
     }
     targets.forEach((target) => {
-      Object.assign(target, {
+      const nextRecordPayload = {
         harmLevel: suggestion.harmLevel,
         harmDescription: suggestion.harmDescription,
         harmImpactObject: suggestion.harmImpactObject,
@@ -1195,9 +1235,9 @@ export const workflowDb = {
         harmAnalysisTrace: suggestion.harmAnalysisTrace,
         harmAnalysisConfidence: suggestion.harmAnalysisConfidence,
         harmAnalysisInputHash: suggestion.harmAnalysisInputHash,
-        riskLevel: applyRiskMatrix(riskMatrix, target.possibilityLevel, suggestion.harmLevel),
-        manualAdjusted: true
-      });
+        riskLevel: applyRiskMatrix(riskMatrix, target.possibilityLevel, suggestion.harmLevel)
+      };
+      if (hasRiskRecordChange(target, nextRecordPayload)) Object.assign(target, nextRecordPayload, { manualAdjusted: true });
     });
     return delay(undefined);
   },
@@ -1211,7 +1251,7 @@ export const workflowDb = {
     const targets = resolveRiskRecordTargets(riskRecords[projectId], id, payload.mergedRiskRecordIds);
     const nextPayload = stripMergeTargetPayload(payload);
     targets.forEach((item) => {
-      Object.assign(item, nextPayload, { manualAdjusted: true });
+      if (hasRiskRecordChange(item, nextPayload)) Object.assign(item, nextPayload, { manualAdjusted: true });
     });
     return delay(undefined);
   }

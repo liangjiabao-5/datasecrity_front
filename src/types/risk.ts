@@ -1,5 +1,28 @@
 export type HarmAnalysisStatus = 'PENDING' | 'CONFIRMED' | 'MANUAL';
 export type HarmAnalysisLlmStatus = 'SUCCESS' | 'FALLBACK' | 'DISABLED' | 'PROVIDED';
+export type RiskAnalysisStatus = 'SUCCESS' | 'PENDING' | 'DISABLED' | 'FAILED';
+
+export interface RiskAiAnalysisFields {
+  /** AI 生成状态；历史记录可能尚未包含这些字段。 */
+  analysisStatus?: RiskAnalysisStatus;
+  analysisErrorMessage?: string | null;
+  implementationPoints?: string | null;
+  analysisProvider?: string | null;
+  analysisModel?: string | null;
+}
+
+export interface RiskSummaryRefreshResult {
+  createdRecords?: number;
+  updatedRecords?: number;
+  inactiveRecords?: number;
+  retainedManualRecords?: number;
+  score?: number;
+  possibilityLevel?: string;
+  scoreModelVersion?: string;
+  analysisSuccessRecords?: number;
+  analysisDisabledRecords?: number;
+  analysisFailedRecords?: number;
+}
 
 export interface HarmAnalysisTrace {
   step1?: string;
@@ -29,7 +52,7 @@ export interface RiskSummaryMergeUpdateResult extends RiskSummaryMergeState {
   message: string;
 }
 
-export interface RiskSource {
+export interface RiskSource extends RiskAiAnalysisFields {
   id: string;
   evaluationItemId?: string;
   assessmentItemId?: string | null;
@@ -39,8 +62,8 @@ export interface RiskSource {
   evaluationResult?: string;
   riskSourceType?: string | null;
   riskTypes: string[];
-  riskDescription: string;
-  riskSourceDescription: string;
+  riskDescription?: string | null;
+  riskSourceDescription?: string | null;
   relatedData: string;
   relatedActivities: string[];
   sourceItem?: string;
@@ -57,12 +80,12 @@ export interface RiskFormOptions {
   relatedActivityOptions: string[];
 }
 
-export interface RiskSourceSavePayload extends Partial<Omit<RiskSource, 'id' | 'relatedData' | 'relatedActivities'>> {
+export interface RiskSourceSavePayload extends Partial<Omit<RiskSource, 'id' | 'manualAdjusted' | 'relatedData' | 'relatedActivities'>> {
   relatedData?: string | string[];
   relatedActivities?: string[];
 }
 
-export interface RiskItem {
+export interface RiskItem extends RiskAiAnalysisFields {
   id: string;
   evaluationItemId?: string;
   assessmentItemId?: string | null;
@@ -72,7 +95,7 @@ export interface RiskItem {
   evaluationRecord?: string;
   evaluationResult?: string;
   riskTypes: string[];
-  riskDescription: string;
+  riskDescription?: string | null;
   harmLevel: string;
   harmDescription?: string;
   harmImpactObject?: string;
@@ -83,7 +106,7 @@ export interface RiskItem {
   harmAnalysisStatus?: HarmAnalysisStatus;
   possibilityLevel: string;
   riskLevel: string;
-  riskSourceDescription: string;
+  riskSourceDescription?: string | null;
   relatedData: string;
   relatedActivities: string[];
   manualAdjusted: boolean;
@@ -94,11 +117,11 @@ export interface RiskItem {
   mergeConflictMessage?: string;
 }
 
-export interface RiskItemSavePayload extends Partial<Omit<RiskItem, 'id'>> {
+export interface RiskItemSavePayload extends Partial<Omit<RiskItem, 'id' | 'manualAdjusted'>> {
   mergedRiskRecordIds?: string[];
 }
 
-export interface RiskSuggestion {
+export interface RiskSuggestion extends RiskAiAnalysisFields {
   id: string;
   evaluationItemId?: string;
   assessmentItemId?: string | null;
@@ -106,9 +129,9 @@ export interface RiskSuggestion {
   evaluationRecord?: string;
   evaluationResult?: string;
   riskLevel: string;
-  riskDescription: string;
-  riskSourceDescription: string;
-  remediationSuggestion: string;
+  riskDescription?: string | null;
+  riskSourceDescription?: string | null;
+  remediationSuggestion?: string | null;
   manualAdjusted?: boolean;
   merged?: boolean;
   mergedRiskRecordIds?: string[];
@@ -117,7 +140,7 @@ export interface RiskSuggestion {
   mergeConflictMessage?: string;
 }
 
-export interface RiskSuggestionSavePayload extends Partial<Omit<RiskSuggestion, 'id'>> {
+export interface RiskSuggestionSavePayload extends Partial<Omit<RiskSuggestion, 'id' | 'manualAdjusted'>> {
   mergedRiskRecordIds?: string[];
 }
 

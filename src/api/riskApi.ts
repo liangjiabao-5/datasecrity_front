@@ -7,6 +7,7 @@ import type {
   RiskFormOptions,
   RiskItem,
   RiskItemSavePayload,
+  RiskSummaryRefreshResult,
   RiskSummaryMergeState,
   RiskSummaryMergeUpdateResult,
   RiskSource,
@@ -122,9 +123,10 @@ const excelBlob = (payload: unknown) =>
   });
 
 export const riskApi = {
-  refresh(projectId: string, overwriteManualChanges: boolean): Promise<unknown> {
+  refresh(projectId: string, overwriteManualChanges = false): Promise<RiskSummaryRefreshResult> {
     if (useMock) return workflowDb.refreshRisks(projectId, overwriteManualChanges);
-    return http.post(`/projects/${projectId}/risk-summary/refresh`, { overwriteManualChanges });
+    const payload = overwriteManualChanges ? { overwriteManualChanges: true } : {};
+    return http.post<RiskSummaryRefreshResult>(`/projects/${projectId}/risk-summary/refresh`, payload, { timeout: 600000 });
   },
   formOptions(projectId: string, relatedActivities: string[] = []): Promise<RiskFormOptions> {
     const activityValues = Array.from(new Set(relatedActivities.map((item) => item.trim()).filter(Boolean)));

@@ -1,10 +1,16 @@
 <template>
-  <div>
+  <div
+    v-loading="refreshing"
+    element-loading-text="正在逐条生成风险描述、风险源描述和整改建议，请勿重复操作"
+    element-loading-background="rgba(255, 255, 255, 0.82)"
+  >
     <ProjectHeader current-step="summary" />
 
     <div class="panel panel-pad">
       <div class="workflow-panel-actions">
-        <el-button type="primary" :icon="Refresh" @click="refreshRisks">刷新统计数据</el-button>
+        <el-button type="primary" :icon="Refresh" :loading="refreshing" :disabled="refreshing" @click="openRefreshDialog">
+          刷新汇总分析
+        </el-button>
         <el-button type="success" @click="router.push(`/projects/${projectId}/reports`)">下一步</el-button>
       </div>
 
@@ -55,20 +61,29 @@
             </el-table-column>
             <el-table-column prop="checkPoint" label="检查要点" min-width="180" show-overflow-tooltip />
             <el-table-column prop="evaluationRecord" label="评估结果" min-width="220" show-overflow-tooltip />
-            <el-table-column prop="riskDescription" label="风险描述" min-width="240" show-overflow-tooltip />
-            <el-table-column prop="riskSourceDescription" label="风险源描述" min-width="260" show-overflow-tooltip />
+            <el-table-column label="风险描述" min-width="240" show-overflow-tooltip>
+              <template #default="{ row }"><span class="analysis-text">{{ formatAiText(row, 'riskDescription') }}</span></template>
+            </el-table-column>
+            <el-table-column label="风险源描述" min-width="260" show-overflow-tooltip>
+              <template #default="{ row }"><span class="analysis-text">{{ formatAiText(row, 'riskSourceDescription') }}</span></template>
+            </el-table-column>
             <el-table-column label="风险源类型" min-width="180" show-overflow-tooltip>
               <template #default="{ row }">{{ formatNullableText(row.riskSourceType) }}</template>
             </el-table-column>
             <el-table-column label="风险类型" min-width="160">
               <template #default="{ row }">{{ formatList(row.riskTypes) }}</template>
             </el-table-column>
-            <el-table-column prop="relatedData" label="涉及的数据及类型、级别" min-width="220" show-overflow-tooltip />
+            <el-table-column label="涉及的数据及类型、级别" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }">{{ formatNullableText(row.relatedData) }}</template>
+            </el-table-column>
             <el-table-column label="涉及的数据处理活动" min-width="180">
               <template #default="{ row }">{{ formatProcessingActivityList(row.relatedActivities) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="100" fixed="right">
-              <template #default="{ row }"><el-button link type="primary" @click="openEdit(row)">修改</el-button></template>
+            <el-table-column label="操作" width="170" fixed="right">
+              <template #default="{ row }">
+                <el-button link type="primary" @click="openEdit(row)">修改</el-button>
+                <el-button link @click="openAnalysisBasis(row)">生成依据</el-button>
+              </template>
             </el-table-column>
           </el-table>
           <div class="summary-pagination">
@@ -108,7 +123,9 @@
             <el-table-column label="评估项ID" min-width="160" show-overflow-tooltip>
               <template #default="{ row }">{{ formatAssessmentItemId(row.assessmentItemId) }}</template>
             </el-table-column>
-            <el-table-column prop="riskDescription" label="风险描述" min-width="220" show-overflow-tooltip />
+            <el-table-column label="风险描述" min-width="220" show-overflow-tooltip>
+              <template #default="{ row }"><span class="analysis-text">{{ formatAiText(row, 'riskDescription') }}</span></template>
+            </el-table-column>
             <el-table-column prop="harmLevel" label="危害程度" width="120">
               <template #default="{ row }">
                 <el-tag :type="levelTagType(row.harmLevel)" effect="plain">{{ formatAssessmentLevel(row.harmLevel) }}</el-tag>
@@ -128,7 +145,9 @@
                 <el-tag :type="levelTagType(row.possibilityLevel)" effect="plain">{{ formatPossibilityLevel(row.possibilityLevel) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="riskSourceDescription" label="风险源描述" min-width="240" show-overflow-tooltip />
+            <el-table-column label="风险源描述" min-width="240" show-overflow-tooltip>
+              <template #default="{ row }"><span class="analysis-text">{{ formatAiText(row, 'riskSourceDescription') }}</span></template>
+            </el-table-column>
             <el-table-column label="风险类型" min-width="150">
               <template #default="{ row }">{{ formatList(row.riskTypes) }}</template>
             </el-table-column>
@@ -143,9 +162,10 @@
             <el-table-column label="涉及的数据处理活动" min-width="180">
               <template #default="{ row }">{{ formatProcessingActivityList(row.relatedActivities) }}</template>
             </el-table-column>
-            <el-table-column label="操作" width="240" fixed="right">
+            <el-table-column label="操作" width="310" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" @click="openEdit(row)">修改</el-button>
+                <el-button link @click="openAnalysisBasis(row)">生成依据</el-button>
                 <el-button
                   link
                   type="primary"
@@ -180,17 +200,24 @@
             <el-table-column label="评估项ID" min-width="160" show-overflow-tooltip>
               <template #default="{ row }">{{ formatAssessmentItemId(row.assessmentItemId) }}</template>
             </el-table-column>
-            <el-table-column prop="riskDescription" label="风险描述" min-width="240" show-overflow-tooltip />
-            <el-table-column prop="riskSourceDescription" label="风险源描述" min-width="260" show-overflow-tooltip />
+            <el-table-column label="风险描述" min-width="240" show-overflow-tooltip>
+              <template #default="{ row }"><span class="analysis-text">{{ formatAiText(row, 'riskDescription') }}</span></template>
+            </el-table-column>
+            <el-table-column label="风险源描述" min-width="260" show-overflow-tooltip>
+              <template #default="{ row }"><span class="analysis-text">{{ formatAiText(row, 'riskSourceDescription') }}</span></template>
+            </el-table-column>
             <el-table-column prop="riskLevel" label="风险等级" width="120">
               <template #default="{ row }">
                 <el-tag :type="levelTagType(row.riskLevel)" effect="plain">{{ formatRiskLevel(row.riskLevel) }}</el-tag>
               </template>
             </el-table-column>
-            <el-table-column prop="remediationSuggestion" label="整改建议" min-width="280" show-overflow-tooltip />
-            <el-table-column label="操作" width="100" fixed="right">
+            <el-table-column label="整改建议" min-width="280" show-overflow-tooltip>
+              <template #default="{ row }"><span class="analysis-text">{{ formatAiText(row, 'remediationSuggestion') }}</span></template>
+            </el-table-column>
+            <el-table-column label="操作" width="170" fixed="right">
               <template #default="{ row }">
                 <el-button link type="primary" @click="openEdit(row)">修改</el-button>
+                <el-button link @click="openAnalysisBasis(row)">生成依据</el-button>
               </template>
             </el-table-column>
           </el-table>
@@ -225,6 +252,48 @@
       </el-table>
       <template #footer>
         <el-button type="primary" @click="importErrorVisible = false">知道了</el-button>
+      </template>
+    </el-dialog>
+
+    <el-dialog
+      v-model="refreshDialogVisible"
+      title="刷新汇总分析"
+      width="620px"
+      :close-on-click-modal="!refreshing"
+      :close-on-press-escape="!refreshing"
+      :show-close="!refreshing"
+    >
+      <el-alert
+        title="将根据最新现场测评结果刷新风险汇总，并重新加载三个列表。请选择本次对人工修改内容的处理方式。"
+        type="info"
+        show-icon
+        :closable="false"
+        style="margin-bottom: 16px"
+      />
+      <el-radio-group v-model="refreshMode" class="refresh-mode-options">
+        <el-radio label="normal" border>
+          <span class="refresh-mode-title">保留人工内容（推荐）</span>
+          <span class="refresh-mode-description">仅更新未人工锁定的记录；已人工修改的内容与评审结果保持不变。</span>
+        </el-radio>
+        <el-radio label="overwrite" border>
+          <span class="refresh-mode-title">覆盖人工内容并重新生成</span>
+          <span class="refresh-mode-description">以最新现场测评重新生成全部记录；AI 成功时解除人工锁定，失败或未配置时由服务端保留人工内容。</span>
+        </el-radio>
+      </el-radio-group>
+      <el-alert
+        v-if="refreshMode === 'overwrite'"
+        title="该操作会覆盖已人工确认的风险内容和后续评审结果，请确认已不再需要保留这些修改。"
+        type="warning"
+        show-icon
+        :closable="false"
+        style="margin-top: 16px"
+      />
+
+      <template #footer>
+        <el-button :disabled="refreshing" @click="refreshDialogVisible = false">取消</el-button>
+        <el-button type="primary" :loading="refreshing" @click="confirmRefresh">
+          {{ refreshMode === 'overwrite' ? '确认覆盖并刷新' : '开始刷新' }}
+        </el-button>
       </template>
     </el-dialog>
 
@@ -323,6 +392,46 @@
       </template>
     </el-dialog>
 
+    <el-drawer v-model="analysisBasisVisible" title="AI 生成依据" size="620px">
+      <template v-if="analysisBasisRow">
+        <el-descriptions :column="1" border>
+          <el-descriptions-item label="AI 状态">
+            <el-tag :type="analysisStatusTagType(analysisBasisRow.analysisStatus)" effect="plain">
+              {{ formatAnalysisStatus(analysisBasisRow.analysisStatus) }}
+            </el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item v-if="analysisBasisRow.manualAdjusted" label="人工修改">
+            <el-tag type="warning" effect="plain">已人工修改，本行已锁定</el-tag>
+          </el-descriptions-item>
+          <el-descriptions-item v-if="analysisBasisRow.analysisProvider" label="模型提供方">
+            {{ analysisBasisRow.analysisProvider }}
+          </el-descriptions-item>
+          <el-descriptions-item v-if="analysisBasisRow.analysisModel" label="模型名称">
+            {{ analysisBasisRow.analysisModel }}
+          </el-descriptions-item>
+        </el-descriptions>
+
+        <el-alert
+          v-if="analysisBasisRow.analysisStatus !== 'SUCCESS' && analysisBasisRow.analysisErrorMessage"
+          :title="analysisBasisRow.analysisErrorMessage"
+          type="warning"
+          show-icon
+          :closable="false"
+          style="margin-top: 16px"
+        />
+
+        <el-collapse style="margin-top: 16px">
+          <el-collapse-item title="实施要求" name="implementation-points">
+            <div class="analysis-basis-text">{{ formatNullableText(analysisBasisRow.implementationPoints) }}</div>
+          </el-collapse-item>
+          <el-collapse-item title="现场测评结果" name="evaluation-record">
+            <div class="analysis-basis-text">{{ formatNullableText(analysisBasisRow.evaluationRecord) }}</div>
+          </el-collapse-item>
+        </el-collapse>
+      </template>
+      <el-empty v-else description="暂无生成依据" />
+    </el-drawer>
+
     <el-dialog v-model="harmAnalysisVisible" :title="harmAnalysisDialogTitle" width="860px">
       <template v-if="harmAnalysisSuggestion">
         <el-alert
@@ -414,7 +523,7 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { ElMessage } from 'element-plus';
 import type { UploadFile } from 'element-plus';
 import { DataAnalysis, Download, Refresh, Upload } from '@element-plus/icons-vue';
 import ProjectHeader from '@/components/ProjectHeader.vue';
@@ -426,8 +535,10 @@ import type {
   HarmAnalysisSuggestion,
   HarmAnalysisTrace,
   RiskItem,
+  RiskAnalysisStatus,
   RiskSource,
-  RiskSuggestion
+  RiskSuggestion,
+  RiskSummaryRefreshResult
 } from '@/types/risk';
 import { downloadBlobFile } from '@/utils/fileActions';
 import { formatProcessingActivityList, processingActivityLabels, riskLevelLabels } from '@/utils/labels';
@@ -436,6 +547,7 @@ import { calculateRiskLevelByMatrix } from '@/utils/riskMatrix';
 
 type SummaryTab = 'sources' | 'items' | 'suggestions';
 type ImportableSummaryTab = Extract<SummaryTab, 'sources' | 'items'>;
+type RefreshMode = 'normal' | 'overwrite';
 type EditForm = Partial<RiskSource & RiskItem & RiskSuggestion>;
 type HarmAnalysisDisplayStatus = HarmAnalysisStatus | 'SUGGESTION_PENDING';
 type SummaryPagination = {
@@ -448,11 +560,16 @@ type RiskMergeErrorResponse = {
   message?: string;
   data?: unknown;
 };
+type RiskAnalysisRow = RiskSource | RiskItem | RiskSuggestion;
+type AiTextField = 'riskDescription' | 'riskSourceDescription' | 'remediationSuggestion';
 
 const route = useRoute();
 const router = useRouter();
 const projectId = String(route.params.projectId || '');
 const loading = ref(false);
+const refreshing = ref(false);
+const refreshDialogVisible = ref(false);
+const refreshMode = ref<RefreshMode>('normal');
 const activeTab = ref<SummaryTab>('sources');
 const riskSources = ref<RiskSource[]>([]);
 const riskItems = ref<RiskItem[]>([]);
@@ -475,6 +592,8 @@ const editVisible = ref(false);
 const editingId = ref('');
 const editMergedRiskRecordIds = ref<string[]>([]);
 const editForm = reactive<EditForm>({});
+const analysisBasisVisible = ref(false);
+const analysisBasisRow = ref<RiskAnalysisRow | null>(null);
 const harmAnalysisVisible = ref(false);
 const harmAnalyzingId = ref('');
 const batchAnalyzing = ref(false);
@@ -537,6 +656,27 @@ const llmStatusLabels: Record<string, string> = {
 const formatAssessmentItemId = (value?: string | null) => (value?.trim() ? value.trim() : '-');
 const formatNullableText = (value?: string | null) => (value?.trim() ? value.trim() : '-');
 const formatList = (value?: string[]) => (value?.length ? value.join('、') : '-');
+const analysisStatusLabels: Record<RiskAnalysisStatus, string> = {
+  SUCCESS: '已生成',
+  PENDING: '待生成',
+  DISABLED: '未配置模型',
+  FAILED: '生成失败'
+};
+const formatAnalysisStatus = (value?: RiskAnalysisStatus) => analysisStatusLabels[value || 'PENDING'];
+const analysisStatusTagType = (value?: RiskAnalysisStatus) => {
+  if (value === 'SUCCESS') return 'success';
+  if (value === 'FAILED') return 'danger';
+  if (value === 'DISABLED') return 'warning';
+  return 'info';
+};
+const formatAiText = (row: RiskAnalysisRow, field: AiTextField) => {
+  if (row.analysisStatus === 'PENDING') return '待生成';
+  if (row.analysisStatus === 'FAILED') return '生成失败';
+  if (row.analysisStatus === 'DISABLED') return '未生成';
+  const value = row[field];
+  if (typeof value === 'string' && value.trim()) return value.trim();
+  return '-';
+};
 const isEmptyLevel = (value?: string) => !value || value === '-';
 const formatAssessmentLevel = (value?: string) => (isEmptyLevel(value) ? '待评估' : harmLevelLabels[value || ''] || value || '');
 const formatSuggestedHarmLevel = (suggestion: HarmAnalysisSuggestion) =>
@@ -654,8 +794,15 @@ const normalizeRelatedActivityValues = (value?: string[]) =>
   (value || []).map((item) => processingActivityLabels[item] || item).filter(Boolean);
 
 const fetchRiskFormOptions = async (relatedActivities: string[] = []) => {
+  const activityValues = uniqueValues(relatedActivities);
+  if (!activityValues.length) {
+    relatedDataOptions.value = [];
+    relatedActivityOptions.value = defaultRelatedActivityOptions;
+    return;
+  }
+
   try {
-    const options = await riskApi.formOptions(projectId, relatedActivities);
+    const options = await riskApi.formOptions(projectId, activityValues);
     relatedDataOptions.value = uniqueValues(options.relatedDataOptions || []);
     relatedActivityOptions.value = uniqueValues(options.relatedActivityOptions || defaultRelatedActivityOptions);
   } catch (error) {
@@ -942,23 +1089,53 @@ const load = async () => {
   }
 };
 
-const refreshRisks = async () => {
+const reloadAllRiskSummaryTabs = async () => {
+  await Promise.all((['sources', 'items', 'suggestions'] as SummaryTab[]).map((tab) => loadTab(tab)));
+};
+
+const refreshSuccessMessage = (result: RiskSummaryRefreshResult) => {
+  const success = result.analysisSuccessRecords ?? 0;
+  const disabled = result.analysisDisabledRecords ?? 0;
+  const failed = result.analysisFailedRecords ?? 0;
+  const retained = result.retainedManualRecords ?? 0;
+  return `汇总分析已刷新：AI生成成功 ${success} 条，未配置 ${disabled} 条，生成失败 ${failed} 条；保留人工修改 ${retained} 条。`;
+};
+
+const retainedManualRecordsNotice = '存在已人工调整的风险源未重新计算，已保留人工修改内容；如需放弃人工内容，请再次刷新并选择“覆盖人工内容并重新生成”。';
+
+const openRefreshDialog = () => {
+  if (refreshing.value) return;
+  refreshMode.value = 'normal';
+  refreshDialogVisible.value = true;
+};
+
+const confirmRefresh = async () => {
+  const overwriteManualChanges = refreshMode.value === 'overwrite';
+  refreshDialogVisible.value = false;
+  await refreshRisks(overwriteManualChanges);
+};
+
+const refreshRisks = async (overwriteManualChanges = false) => {
+  if (refreshing.value) return;
+  refreshing.value = true;
   try {
-    await ElMessageBox.confirm('刷新统计数据将重新汇总现场测评中基本符合和不符合的数据，是否覆盖未确认内容？', '刷新确认', {
-      type: 'warning',
-      confirmButtonText: '覆盖刷新',
-      cancelButtonText: '不覆盖'
+    const result = await riskApi.refresh(projectId, overwriteManualChanges);
+    (Object.keys(pagination) as SummaryTab[]).forEach((tab) => {
+      pagination[tab].pageNo = 1;
     });
-    await riskApi.refresh(projectId, true);
-    ElMessage.success('已刷新统计数据');
-    pagination[activeTab.value].pageNo = 1;
-    await load();
-  } catch {
-    await riskApi.refresh(projectId, false);
-    ElMessage.success('已刷新统计数据，未覆盖人工修改内容');
-    pagination[activeTab.value].pageNo = 1;
-    await load();
+    await Promise.all([reloadAllRiskSummaryTabs(), fetchMergeStatus(), loadProjectRiskMatrix()]);
+    ElMessage.success(refreshSuccessMessage(result));
+    if (!overwriteManualChanges && (result.retainedManualRecords || 0) > 0) ElMessage.warning(retainedManualRecordsNotice);
+  } catch (error) {
+    ElMessage.error(`刷新汇总分析失败：${getErrorMessage(error, '请稍后重试')}`);
+  } finally {
+    refreshing.value = false;
   }
+};
+
+const openAnalysisBasis = (row: RiskAnalysisRow) => {
+  analysisBasisRow.value = row;
+  analysisBasisVisible.value = true;
 };
 
 const openEdit = (row: RiskSource | RiskItem | RiskSuggestion) => {
@@ -989,8 +1166,7 @@ const saveEdit = async () => {
       riskSourceDescription: editForm.riskSourceDescription || '',
       relatedData: sourceRelatedDataValues.value,
       relatedActivities: sourceRelatedActivityValues.value,
-      sourceItem: editForm.sourceItem,
-      manualAdjusted: true
+      sourceItem: editForm.sourceItem
     });
   }
   if (activeTab.value === 'items') {
@@ -998,15 +1174,13 @@ const saveEdit = async () => {
       harmLevel: editForm.harmLevel || '-',
       possibilityLevel: editForm.possibilityLevel || '-',
       riskLevel: linkedEditRiskLevel.value,
-      mergedRiskRecordIds: editMergedRiskRecordIds.value,
-      manualAdjusted: true
+      mergedRiskRecordIds: editMergedRiskRecordIds.value
     });
   }
   if (activeTab.value === 'suggestions') {
     await riskApi.saveRiskSuggestion(projectId, editingId.value, {
       remediationSuggestion: editForm.remediationSuggestion || '',
-      mergedRiskRecordIds: editMergedRiskRecordIds.value,
-      manualAdjusted: true
+      mergedRiskRecordIds: editMergedRiskRecordIds.value
     });
   }
   editVisible.value = false;
@@ -1044,6 +1218,50 @@ onMounted(async () => {
   justify-content: flex-end;
   margin-top: 16px;
   overflow-x: auto;
+}
+
+.analysis-text,
+.analysis-basis-text {
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.6;
+}
+
+.refresh-mode-options {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 12px;
+  width: 100%;
+}
+
+.refresh-mode-options :deep(.el-radio) {
+  display: flex;
+  align-items: flex-start;
+  width: 100%;
+  height: auto;
+  min-height: 76px;
+  margin-right: 0;
+  padding: 14px 16px;
+  white-space: normal;
+}
+
+.refresh-mode-options :deep(.el-radio__label) {
+  display: flex;
+  flex: 1;
+  flex-direction: column;
+  gap: 6px;
+  padding-left: 10px;
+}
+
+.refresh-mode-title {
+  color: #303133;
+  font-weight: 600;
+}
+
+.refresh-mode-description {
+  color: #606266;
+  line-height: 1.6;
 }
 
 .harm-section-title {
