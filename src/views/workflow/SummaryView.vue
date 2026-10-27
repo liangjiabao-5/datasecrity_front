@@ -43,7 +43,7 @@
               :show-file-list="false"
               accept=".xlsx,.xls"
               :disabled="importingTab === 'sources'"
-              :on-change="(file) => importRiskSummary('sources', file)"
+              :on-change="(file: UploadFile) => importRiskSummary('sources', file)"
             >
               <el-button :icon="Upload" :loading="importingTab === 'sources'">导入</el-button>
             </el-upload>
@@ -107,7 +107,7 @@
               :show-file-list="false"
               accept=".xlsx,.xls"
               :disabled="importingTab === 'items'"
-              :on-change="(file) => importRiskSummary('items', file)"
+              :on-change="(file: UploadFile) => importRiskSummary('items', file)"
             >
               <el-button :icon="Upload" :loading="importingTab === 'items'">导入</el-button>
             </el-upload>
@@ -521,6 +521,7 @@
 </template>
 
 <script setup lang="ts">
+import { notifyApiError } from '@/utils/apiFeedback';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
@@ -529,6 +530,7 @@ import { DataAnalysis, Download, Refresh, Upload } from '@element-plus/icons-vue
 import ProjectHeader from '@/components/ProjectHeader.vue';
 import { projectApi } from '@/api/projectApi';
 import { riskApi } from '@/api/riskApi';
+import { notifyApiSuccess } from '@/utils/apiFeedback';
 import type { RiskMatrixJson } from '@/types/knowledge';
 import type {
   HarmAnalysisStatus,
@@ -603,6 +605,7 @@ const harmAnalysisRiskItemId = ref('');
 const harmAnalysisMergedRiskRecordIds = ref<string[]>([]);
 const harmAnalysisSuggestions = ref<Record<string, HarmAnalysisSuggestion>>({});
 const projectRiskMatrix = ref<RiskMatrixJson>({});
+const matrixLoaded = ref(false);
 const pagination = reactive<Record<SummaryTab, SummaryPagination>>({
   sources: { pageNo: 1, pageSize: 10, total: 0 },
   items: { pageNo: 1, pageSize: 10, total: 0 },
@@ -673,7 +676,9 @@ const formatAiText = (row: RiskAnalysisRow, field: AiTextField) => {
   if (row.analysisStatus === 'PENDING') return '待生成';
   if (row.analysisStatus === 'FAILED') return '生成失败';
   if (row.analysisStatus === 'DISABLED') return '未生成';
-  const value = row[field];
+  const value = field === 'remediationSuggestion'
+    ? ('remediationSuggestion' in row ? row.remediationSuggestion : undefined)
+    : row[field];
   if (typeof value === 'string' && value.trim()) return value.trim();
   return '-';
 };
@@ -808,7 +813,7 @@ const fetchRiskFormOptions = async (relatedActivities: string[] = []) => {
   } catch (error) {
     relatedDataOptions.value = [];
     relatedActivityOptions.value = defaultRelatedActivityOptions;
-    ElMessage.warning(`风险源下拉选项加载失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, '风险源下拉选项加载失败，请稍后重试', 'warning');
   }
 };
 
@@ -823,7 +828,7 @@ const fetchMergeStatus = async () => {
     mergeEnabled.value = status.mergeEnabled;
     confirmedMergeEnabled.value = status.mergeEnabled;
   } catch (error) {
-    ElMessage.warning(`合并开关状态加载失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, '合并开关状态加载失败，请稍后重试', 'warning');
   }
 };
 
@@ -837,20 +842,22 @@ const handleMergeChange = async (value: string | number | boolean) => {
   const enabled = Boolean(value);
   mergeLoading.value = true;
   try {
-    const status = await riskApi.setMergeStatus(projectId, enabled);
+    const response = await riskApi.setMergeStatus(projectId, enabled);
+    const status = response.data;
     mergeEnabled.value = status.mergeEnabled;
     confirmedMergeEnabled.value = status.mergeEnabled;
-    ElMessage.success(status.mergeEnabled ? '已开启风险清单合并' : '已关闭风险清单合并');
-    await reloadMergedResultTabs();
+    notifyApiSuccess(response, status.mergeEnabled ? '已开启风险清单合并' : '已关闭风险清单合并');
+    try { await reloadMergedResultTabs(); }
+    catch (error) { notifyApiError(error, '合并设置已保存，但风险列表刷新失败，请手动刷新'); }
   } catch (error) {
     const mergeError = getRiskMergeError(error);
     if (mergeError.code === 'RISK_MERGE_REQUIRED_FIELDS_MISSING') {
       mergeEnabled.value = false;
       confirmedMergeEnabled.value = false;
-      ElMessage.warning(getErrorMessage(error, '风险源清单存在未填写完整的行，请补充后再进行合并。'));
+      notifyApiError(error, '风险源清单存在未填写完整的行，请补充后再进行合并。', 'warning');
     } else {
       mergeEnabled.value = confirmedMergeEnabled.value;
-      ElMessage.error(`合并开关设置失败：${getErrorMessage(error, '请稍后重试')}`);
+      notifyApiError(error, `合并开关设置失败：${getErrorMessage(error, '请稍后重试')}`);
     }
   } finally {
     mergeLoading.value = false;
@@ -865,15 +872,16 @@ const updateMergeData = async () => {
     confirmedMergeEnabled.value = result.mergeEnabled;
     if (result.hasMergeConflict) ElMessage.warning(result.message);
     else ElMessage.success(result.message);
-    await reloadMergedResultTabs();
+    try { await reloadMergedResultTabs(); }
+    catch (error) { notifyApiError(error, '合并数据已更新，但风险列表刷新失败，请手动刷新'); }
   } catch (error) {
     const mergeError = getRiskMergeError(error);
     if (mergeError.code === 'RISK_MERGE_REQUIRED_FIELDS_MISSING') {
       mergeEnabled.value = false;
       confirmedMergeEnabled.value = false;
-      ElMessage.warning(getErrorMessage(error, '风险源清单存在未填写完整的行，请补充后再进行合并。'));
+      notifyApiError(error, '风险源清单存在未填写完整的行，请补充后再进行合并。', 'warning');
     } else {
-      ElMessage.error(`更新合并失败：${getErrorMessage(error, '请稍后重试')}`);
+      notifyApiError(error, `更新合并失败：${getErrorMessage(error, '请稍后重试')}`);
     }
   } finally {
     mergeUpdating.value = false;
@@ -887,7 +895,7 @@ const exportRiskSummary = async (tab: ImportableSummaryTab) => {
     downloadBlobFile(`${riskSummaryTabNames[tab]}-${projectId}.xlsx`, blob);
     ElMessage.success(`${riskSummaryTabNames[tab]}已导出`);
   } catch (error) {
-    ElMessage.error(`${riskSummaryTabNames[tab]}导出失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, `${riskSummaryTabNames[tab]}导出失败：${getErrorMessage(error, '请稍后重试')}`);
   } finally {
     exportingTab.value = '';
   }
@@ -902,11 +910,10 @@ const importRiskSummary = async (tab: ImportableSummaryTab, file: UploadFile) =>
       tab === 'sources'
         ? await riskApi.importRiskSources(projectId, file.raw)
         : await riskApi.importRiskItems(projectId, file.raw);
-    const feedback = normalizeRiskSummaryExcelImportResult(result);
+    const feedback = normalizeRiskSummaryExcelImportResult(result.data);
 
     pagination[tab].pageNo = 1;
     if (activeTab.value !== tab) activeTab.value = tab;
-    await load();
 
     if (feedback.hasErrors) {
       importErrorRows.value = feedback.errors;
@@ -915,12 +922,14 @@ const importRiskSummary = async (tab: ImportableSummaryTab, file: UploadFile) =>
       importErrorVisible.value = true;
       ElMessage.warning(`${riskSummaryTabNames[tab]}导入完成：成功 ${feedback.importedCount} 条，异常 ${feedback.failedCount} 条`);
     } else {
-      ElMessage.success(
+      notifyApiSuccess(result,
         `${riskSummaryTabNames[tab]}已导入${feedback.importedCount ? `，共 ${feedback.importedCount} 条` : ''}`
       );
     }
+    try { await load(); }
+    catch (error) { notifyApiError(error, '风险清单已导入，但列表刷新失败，请手动刷新'); }
   } catch (error) {
-    ElMessage.error(`${riskSummaryTabNames[tab]}导入失败：${getErrorMessage(error, '请检查导入文件或接口服务')}`);
+    notifyApiError(error, `${riskSummaryTabNames[tab]}导入失败：${getErrorMessage(error, '请检查导入文件或接口服务')}`);
   } finally {
     importingTab.value = '';
   }
@@ -930,8 +939,12 @@ const loadProjectRiskMatrix = async () => {
   try {
     const matrix = await projectApi.riskMatrix(projectId);
     projectRiskMatrix.value = matrix?.matrixJson || {};
-  } catch {
+    matrixLoaded.value = Object.keys(projectRiskMatrix.value).length > 0;
+    if (!matrixLoaded.value) ElMessage.warning('项目风险评价矩阵未配置，请先检查项目配置');
+  } catch (error) {
     projectRiskMatrix.value = {};
+    matrixLoaded.value = false;
+    notifyApiError(error, '项目风险评价矩阵加载失败，请刷新后重试');
   }
 };
 
@@ -972,7 +985,7 @@ const suggestRowHarm = async (row: RiskItem) => {
     ElMessage.success('已生成风险危害程度辅助判定建议');
     await load();
   } catch (error) {
-    ElMessage.error(`辅助判定失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, `辅助判定失败：${getErrorMessage(error, '请稍后重试')}`);
   } finally {
     harmAnalyzingId.value = '';
   }
@@ -1005,7 +1018,7 @@ const suggestCurrentPageHarm = async () => {
     );
     await load();
   } catch (error) {
-    ElMessage.error(`批量辅助判定失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, `批量辅助判定失败：${getErrorMessage(error, '请稍后重试')}`);
   } finally {
     batchAnalyzing.value = false;
   }
@@ -1016,7 +1029,7 @@ const applyHarmAnalysis = async () => {
 
   harmApplying.value = true;
   try {
-    await riskApi.applyRiskItemHarm(projectId, harmAnalysisRiskItemId.value, {
+    const response = await riskApi.applyRiskItemHarm(projectId, harmAnalysisRiskItemId.value, {
       suggestion: harmAnalysisSuggestion.value,
       mergedRiskRecordIds: harmAnalysisMergedRiskRecordIds.value
     });
@@ -1024,10 +1037,10 @@ const applyHarmAnalysis = async () => {
     delete nextSuggestions[harmAnalysisRiskItemId.value];
     harmAnalysisSuggestions.value = nextSuggestions;
     harmAnalysisVisible.value = false;
-    ElMessage.success('已应用风险危害程度辅助判定结果');
+    notifyApiSuccess(response, '已应用风险危害程度辅助判定结果');
     await load();
   } catch (error) {
-    ElMessage.error(`应用辅助判定失败：${getErrorMessage(error, '请重新生成建议后再试')}`);
+    notifyApiError(error, `应用辅助判定失败：${getErrorMessage(error, '请重新生成建议后再试')}`);
   } finally {
     harmApplying.value = false;
   }
@@ -1119,15 +1132,17 @@ const refreshRisks = async (overwriteManualChanges = false) => {
   if (refreshing.value) return;
   refreshing.value = true;
   try {
-    const result = await riskApi.refresh(projectId, overwriteManualChanges);
+    const response = await riskApi.refresh(projectId, overwriteManualChanges);
+    const result = response.data;
     (Object.keys(pagination) as SummaryTab[]).forEach((tab) => {
       pagination[tab].pageNo = 1;
     });
-    await Promise.all([reloadAllRiskSummaryTabs(), fetchMergeStatus(), loadProjectRiskMatrix()]);
-    ElMessage.success(refreshSuccessMessage(result));
+    notifyApiSuccess(response, refreshSuccessMessage(result));
     if (!overwriteManualChanges && (result.retainedManualRecords || 0) > 0) ElMessage.warning(retainedManualRecordsNotice);
+    try { await Promise.all([reloadAllRiskSummaryTabs(), fetchMergeStatus(), loadProjectRiskMatrix()]); }
+    catch (error) { notifyApiError(error, '汇总分析已生成，但页面刷新失败，请手动刷新'); }
   } catch (error) {
-    ElMessage.error(`刷新汇总分析失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, `刷新汇总分析失败：${getErrorMessage(error, '请稍后重试')}`);
   } finally {
     refreshing.value = false;
   }
@@ -1159,8 +1174,13 @@ const openEdit = (row: RiskSource | RiskItem | RiskSuggestion) => {
 };
 
 const saveEdit = async () => {
+  if (activeTab.value === 'items' && !matrixLoaded.value) {
+    ElMessage.warning('风险评价矩阵尚未加载，无法保存风险等级，请刷新后重试');
+    return;
+  }
+  let response;
   if (activeTab.value === 'sources') {
-    await riskApi.saveRiskSource(projectId, editingId.value, {
+    response = await riskApi.saveRiskSource(projectId, editingId.value, {
       riskTypes: editForm.riskTypes || [],
       riskDescription: editForm.riskDescription || '',
       riskSourceDescription: editForm.riskSourceDescription || '',
@@ -1170,7 +1190,7 @@ const saveEdit = async () => {
     });
   }
   if (activeTab.value === 'items') {
-    await riskApi.saveRiskItem(projectId, editingId.value, {
+    response = await riskApi.saveRiskItem(projectId, editingId.value, {
       harmLevel: editForm.harmLevel || '-',
       possibilityLevel: editForm.possibilityLevel || '-',
       riskLevel: linkedEditRiskLevel.value,
@@ -1178,13 +1198,13 @@ const saveEdit = async () => {
     });
   }
   if (activeTab.value === 'suggestions') {
-    await riskApi.saveRiskSuggestion(projectId, editingId.value, {
+    response = await riskApi.saveRiskSuggestion(projectId, editingId.value, {
       remediationSuggestion: editForm.remediationSuggestion || '',
       mergedRiskRecordIds: editMergedRiskRecordIds.value
     });
   }
   editVisible.value = false;
-  ElMessage.success('风险记录已保存');
+  notifyApiSuccess(response, '风险记录已保存');
   await load();
 };
 

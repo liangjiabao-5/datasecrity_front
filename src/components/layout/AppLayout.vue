@@ -11,6 +11,10 @@
 
       <nav class="side-menu">
         <el-menu :default-active="activeMenu" router>
+          <el-menu-item index="/dashboard">
+            <el-icon><House /></el-icon>
+            <span>首页</span>
+          </el-menu-item>
           <el-menu-item index="/projects">
             <el-icon><FolderOpened /></el-icon>
             <span>项目管理</span>
@@ -77,9 +81,11 @@ import { computed, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
 import { authApi } from '@/api/authApi';
+import { getApiErrorMessage, notifyApiError, notifyApiSuccess } from '@/utils/apiFeedback';
 import {
   Collection,
   FolderOpened,
+  House,
   Lock,
   Setting,
   SwitchButton
@@ -98,11 +104,12 @@ const passwordForm = reactive({ oldPassword: '', newPassword: '', confirmPasswor
 
 const pageTitle = computed(() => String(route.meta.title || '数据安全风险评估'));
 const projectSubtitle = computed(() => {
-  const projectName = projectStore.currentProject?.projectName;
+  const projectName = route.params.projectId === projectStore.currentProject?.id ? projectStore.currentProject?.projectName : '';
   return projectName ? `当前项目：${projectName}` : '按项目流程完成调研、测评、汇总和报告生成';
 });
 
 const activeMenu = computed(() => {
+  if (route.path === '/dashboard') return '/dashboard';
   if (route.path.startsWith('/knowledge')) return '/knowledge';
   if (route.path.startsWith('/settings')) return '/settings';
   return '/projects';
@@ -117,9 +124,15 @@ const handleUserCommand = async (command: string) => {
     return;
   }
   if (command === 'logout') {
-    await auth.logout();
-    ElMessage.success('已退出登录');
-    await router.replace('/login');
+    try {
+      const response = await auth.logout();
+      notifyApiSuccess(response, '已退出登录');
+    } catch (error) {
+      const failure = { ...(error as object), message: `已退出本地登录，但服务端退出未确认：${getApiErrorMessage(error)}` };
+      notifyApiError(failure, undefined, 'warning');
+    } finally {
+      await router.replace('/login');
+    }
   }
 };
 
@@ -136,13 +149,14 @@ const changePassword = async () => {
 
   passwordSaving.value = true;
   try {
-    const result = await authApi.changePassword({ oldPassword: passwordForm.oldPassword, newPassword: passwordForm.newPassword });
+    const response = await authApi.changePassword({ oldPassword: passwordForm.oldPassword, newPassword: passwordForm.newPassword });
+    const result = response.data;
     if (result?.accessToken) {
       if (result.user) auth.applySession(result as import('@/types/auth').AuthSession);
       else auth.updateAccessToken(result.accessToken);
     }
     passwordVisible.value = false;
-    ElMessage.success('密码修改成功');
+    notifyApiSuccess(response, '密码修改成功');
   } finally {
     passwordSaving.value = false;
   }

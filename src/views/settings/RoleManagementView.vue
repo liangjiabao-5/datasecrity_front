@@ -23,10 +23,12 @@
 </template>
 
 <script setup lang="ts">
+import { notifyApiError } from '@/utils/apiFeedback';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox, type FormInstance, type FormRules } from 'element-plus';
 import { Plus } from '@element-plus/icons-vue';
 import { roleApi } from '@/api/systemApi';
+import { notifyApiSuccess } from '@/utils/apiFeedback';
 import type { Permission, RoleStatus, SystemRole } from '@/types/auth';
 
 const defaultForm = () => ({ code: '', name: '', description: '', status: 'ACTIVE' as RoleStatus });
@@ -50,9 +52,33 @@ const loadRoles = async () => { loading.value = true; try { roles.value = await 
 const loadPermissions = async () => { permissions.value = await roleApi.permissions(); };
 const openCreate = () => { editingId.value = ''; Object.assign(form, defaultForm()); formVisible.value = true; };
 const openEdit = async (roleId: string) => { const role = await roleApi.detail(roleId); editingId.value = role.id; Object.assign(form, { code: role.code, name: role.name, description: role.description || '', status: role.status }); formVisible.value = true; };
-const saveRole = async () => { const valid = await formRef.value?.validate().catch(() => false); if (!valid) return; saving.value = true; try { if (editingId.value) await roleApi.update(editingId.value, form); else await roleApi.create(form); ElMessage.success('角色信息已保存'); formVisible.value = false; await loadRoles(); } finally { saving.value = false; } };
+const saveRole = async () => {
+  const valid = await formRef.value?.validate().catch(() => false);
+  if (!valid) return;
+  saving.value = true;
+  try {
+    const response = editingId.value ? await roleApi.update(editingId.value, form) : await roleApi.create(form);
+    notifyApiSuccess(response, '角色信息已保存');
+    formVisible.value = false;
+    await loadRoles();
+  } finally { saving.value = false; }
+};
 const openPermissions = async (roleId: string) => { const role = await roleApi.detail(roleId); if (isBuiltin(role)) { ElMessage.info('内置角色权限由系统维护，不能在页面修改。'); return; } permissionRoleId.value = role.id; selectedPermissionIds.value = role.permissions?.filter((permission) => !reservedSuperAdminPermissionCodes.has(permission.code)).map((permission) => permission.id) || []; permissionVisible.value = true; };
-const savePermissions = async () => { permissionSaving.value = true; try { await roleApi.updatePermissions(permissionRoleId.value, selectedPermissionIds.value); ElMessage.success('角色权限已保存'); permissionVisible.value = false; await loadRoles(); } catch (error) { const message = error && typeof error === 'object' && 'message' in error ? String(error.message) : '角色权限保存失败，请稍后重试。'; ElMessage.error(message); } finally { permissionSaving.value = false; } };
-const removeRole = async (role: SystemRole) => { await ElMessageBox.confirm(`确认删除角色“${role.name}”？`, '删除确认', { type: 'warning' }); await roleApi.delete(role.id); ElMessage.success('角色已删除'); await loadRoles(); };
+const savePermissions = async () => {
+  permissionSaving.value = true;
+  try {
+    const response = await roleApi.updatePermissions(permissionRoleId.value, selectedPermissionIds.value);
+    notifyApiSuccess(response, '角色权限已保存');
+    permissionVisible.value = false;
+    await loadRoles();
+  } catch (error) { notifyApiError(error, '角色权限保存失败，请稍后重试。'); }
+  finally { permissionSaving.value = false; }
+};
+const removeRole = async (role: SystemRole) => {
+  await ElMessageBox.confirm(`确认删除角色“${role.name}”？`, '删除确认', { type: 'warning' });
+  const response = await roleApi.delete(role.id);
+  notifyApiSuccess(response, '角色已删除');
+  await loadRoles();
+};
 onMounted(async () => { await Promise.all([loadRoles(), loadPermissions()]); });
 </script>

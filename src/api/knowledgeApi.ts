@@ -1,3 +1,5 @@
+import type { ApiResponse } from '@/types/api';
+import { mockEnvelope } from '@/utils/apiFeedback';
 import { knowledgeDb } from '@/mock/knowledgeDb';
 import type { PageResult } from '@/types/api';
 import type {
@@ -56,19 +58,19 @@ export const knowledgeApi = {
     return http.get<T>(`${resourceUrls[resource]}/${id}`);
   },
 
-  create<T extends KnowledgeEntity>(resource: KnowledgeResource, payload: Omit<T, 'id'>): Promise<T> {
-    if (useMock) return knowledgeDb.save(resource, payload as Omit<KnowledgeEntity, 'id'>) as Promise<T>;
-    return http.post<T>(resourceUrls[resource], payload);
+  create<T extends KnowledgeEntity>(resource: KnowledgeResource, payload: Omit<T, 'id'>): Promise<ApiResponse<T>> {
+    if (useMock) return mockEnvelope(knowledgeDb.save(resource, payload as Omit<KnowledgeEntity, 'id'>) as Promise<T>);
+    return http.postEnvelope<T>(resourceUrls[resource], payload);
   },
 
-  update<T extends KnowledgeEntity>(resource: KnowledgeResource, id: string, payload: Omit<T, 'id'>): Promise<T> {
-    if (useMock) return knowledgeDb.save(resource, payload as Omit<KnowledgeEntity, 'id'>, id) as Promise<T>;
-    return http.put<T>(`${resourceUrls[resource]}/${id}`, payload);
+  update<T extends KnowledgeEntity>(resource: KnowledgeResource, id: string, payload: Omit<T, 'id'>): Promise<ApiResponse<T>> {
+    if (useMock) return mockEnvelope(knowledgeDb.save(resource, payload as Omit<KnowledgeEntity, 'id'>, id) as Promise<T>);
+    return http.putEnvelope<T>(`${resourceUrls[resource]}/${id}`, payload);
   },
 
-  delete(resource: KnowledgeResource, id: string): Promise<KnowledgeDeleteResult> {
-    if (useMock) return knowledgeDb.delete(resource, id);
-    return http.delete<KnowledgeDeleteResult>(`${resourceUrls[resource]}/${id}`);
+  delete(resource: KnowledgeResource, id: string): Promise<ApiResponse<KnowledgeDeleteResult>> {
+    if (useMock) return mockEnvelope(knowledgeDb.delete(resource, id));
+    return http.deleteEnvelope<KnowledgeDeleteResult>(`${resourceUrls[resource]}/${id}`);
   },
 
   listTemplateItems(templateId: string, query: KnowledgeQuery): Promise<PageResult<AssessmentTemplateItem>> {
@@ -100,19 +102,19 @@ export const knowledgeApi = {
       .then((payload) => normalizePage(payload, query));
   },
 
-  createHarmRule(modelId: string, payload: Omit<HarmRule, 'id'>): Promise<HarmRule> {
-    if (useMock) return knowledgeDb.saveHarmRule(modelId, payload);
-    return http.post<HarmRule>(`/knowledge/harm-models/${modelId}/rules`, payload);
+  createHarmRule(modelId: string, payload: Omit<HarmRule, 'id'>): Promise<ApiResponse<HarmRule>> {
+    if (useMock) return mockEnvelope(knowledgeDb.saveHarmRule(modelId, payload));
+    return http.postEnvelope<HarmRule>(`/knowledge/harm-models/${modelId}/rules`, payload);
   },
 
-  updateHarmRule(modelId: string, ruleId: string, payload: Omit<HarmRule, 'id'>): Promise<HarmRule> {
-    if (useMock) return knowledgeDb.saveHarmRule(modelId, payload, ruleId);
-    return http.put<HarmRule>(`/knowledge/harm-models/${modelId}/rules/${ruleId}`, payload);
+  updateHarmRule(modelId: string, ruleId: string, payload: Omit<HarmRule, 'id'>): Promise<ApiResponse<HarmRule>> {
+    if (useMock) return mockEnvelope(knowledgeDb.saveHarmRule(modelId, payload, ruleId));
+    return http.putEnvelope<HarmRule>(`/knowledge/harm-models/${modelId}/rules/${ruleId}`, payload);
   },
 
-  deleteHarmRule(modelId: string, ruleId: string): Promise<void> {
-    if (useMock) return knowledgeDb.deleteHarmRule(modelId, ruleId);
-    return http.delete<void>(`/knowledge/harm-models/${modelId}/rules/${ruleId}`);
+  deleteHarmRule(modelId: string, ruleId: string): Promise<ApiResponse<void>> {
+    if (useMock) return mockEnvelope(knowledgeDb.deleteHarmRule(modelId, ruleId));
+    return http.deleteEnvelope<void>(`/knowledge/harm-models/${modelId}/rules/${ruleId}`);
   },
 
   validateScoreModel(payload: unknown, modelId?: string): Promise<unknown> {
@@ -129,5 +131,9 @@ export const knowledgeApi = {
 
   exportAssessmentTemplateUrl(templateId: string): string {
     return `/api/v1/knowledge/assessment-templates/${templateId}/export`;
+  },
+  exportAssessmentTemplate(templateId: string): Promise<Record<string, unknown>> {
+    if (useMock) return this.detail('assessment', templateId).then((data) => ({ ...data, exportFormat: 'JSON' }));
+    return http.get(`/knowledge/assessment-templates/${templateId}/export`);
   }
 };

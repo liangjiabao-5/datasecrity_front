@@ -1,3 +1,5 @@
+import type { ApiResponse } from '@/types/api';
+import { mockEnvelope } from '@/utils/apiFeedback';
 import { mockDb } from '@/mock/db';
 import type { BasicInfoPayload, CustomReferencePayload, ReferenceItem } from '@/types/basicInfo';
 import { useMock } from '@/utils/env';
@@ -29,14 +31,14 @@ export const basicInfoApi = {
     return http.get(`/projects/${projectId}/basic-info`);
   },
 
-  save(projectId: string, payload: BasicInfoPayload): Promise<void> {
-    if (useMock) return mockDb.saveBasicInfo(projectId, payload);
-    return http.put(`/projects/${projectId}/basic-info`, payload);
+  save(projectId: string, payload: BasicInfoPayload): Promise<ApiResponse<void>> {
+    if (useMock) return mockEnvelope(mockDb.saveBasicInfo(projectId, payload));
+    return http.putEnvelope(`/projects/${projectId}/basic-info`, payload);
   },
 
-  createCustomReference(projectId: string, payload: CustomReferencePayload): Promise<ReferenceItem> {
-    if (useMock) return mockDb.createCustomReference(projectId, payload);
-    return http.post(`/projects/${projectId}/basic-info/custom-references`, payload);
+  createCustomReference(projectId: string, payload: CustomReferencePayload): Promise<ApiResponse<ReferenceItem>> {
+    if (useMock) return mockEnvelope(mockDb.createCustomReference(projectId, payload));
+    return http.postEnvelope(`/projects/${projectId}/basic-info/custom-references`, payload);
   },
 
   referenceOptions(): Promise<{ laws: ReferenceItem[]; standards: ReferenceItem[] }> {
@@ -60,12 +62,12 @@ export const basicInfoApi = {
     return http.blob(`/projects/${projectId}/basic-info/export`);
   },
 
-  importExcel(projectId: string, file: File): Promise<BasicInfoPayload> {
-    if (useMock) return mockDb.getBasicInfo(projectId);
+  importExcel(projectId: string, file: File): Promise<ApiResponse<BasicInfoPayload>> {
+    if (useMock) return mockEnvelope(Promise.resolve(mockDb.getBasicInfo(projectId)));
 
     const formData = new FormData();
     formData.append('file', file);
-    return http.post<BasicInfoPayload>(`/projects/${projectId}/basic-info/import`, formData, {
+    return http.postEnvelope<BasicInfoPayload>(`/projects/${projectId}/basic-info/import`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 60000
     });

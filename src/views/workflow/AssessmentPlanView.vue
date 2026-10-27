@@ -158,6 +158,7 @@
 </template>
 
 <script setup lang="ts">
+import { notifyApiError } from '@/utils/apiFeedback';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -165,6 +166,7 @@ import type { UploadFile } from 'element-plus';
 import { Collection, Download, Plus, Refresh, Search, Upload } from '@element-plus/icons-vue';
 import ProjectHeader from '@/components/ProjectHeader.vue';
 import { planApi } from '@/api/planApi';
+import { notifyApiSuccess } from '@/utils/apiFeedback';
 import type {
   AssessmentTeamMember,
   ClientTeamMember,
@@ -267,50 +269,52 @@ const openDialog = (row?: PlanEntity) => {
 };
 
 const saveDialog = async () => {
+  let response;
   if (activeTab.value === 'assessment-team') {
-    await planApi.saveAssessmentTeam(projectId, assessmentForm, editingId.value || undefined);
+    response = await planApi.saveAssessmentTeam(projectId, assessmentForm, editingId.value || undefined);
   } else if (activeTab.value === 'client-team') {
-    await planApi.saveClientTeam(projectId, clientForm, editingId.value || undefined);
+    response = await planApi.saveClientTeam(projectId, clientForm, editingId.value || undefined);
   } else if (activeTab.value === 'focus-points') {
-    await planApi.saveFocusPoint(projectId, focusForm, editingId.value || undefined);
+    response = await planApi.saveFocusPoint(projectId, focusForm, editingId.value || undefined);
   } else {
-    await planApi.saveGapItem(projectId, gapForm, editingId.value || undefined);
+    response = await planApi.saveGapItem(projectId, gapForm, editingId.value || undefined);
   }
   dialogVisible.value = false;
-  ElMessage.success('记录已保存');
+  notifyApiSuccess(response, '记录已保存');
   await load();
 };
 
 const remove = async (id: string) => {
   await ElMessageBox.confirm('删除后可能影响报告输出，请确认是否继续。', '确认删除', { type: 'warning' });
+  let response;
   if (activeTab.value === 'assessment-team') {
-    await planApi.deleteAssessmentTeam(projectId, id);
+    response = await planApi.deleteAssessmentTeam(projectId, id);
   } else if (activeTab.value === 'client-team') {
-    await planApi.deleteClientTeam(projectId, id);
+    response = await planApi.deleteClientTeam(projectId, id);
   } else if (activeTab.value === 'focus-points') {
-    await planApi.deleteFocusPoint(projectId, id);
+    response = await planApi.deleteFocusPoint(projectId, id);
   } else {
-    await planApi.deleteGapItem(projectId, id);
+    response = await planApi.deleteGapItem(projectId, id);
   }
-  ElMessage.success('记录已删除');
+  notifyApiSuccess(response, '记录已删除');
   await load();
 };
 
 const chooseCase = async () => {
-  await planApi.saveFocusPoint(projectId, {
+  const response = await planApi.saveFocusPoint(projectId, {
     name: '权限最小化',
     domain: '访问控制',
     riskLevel: 'MEDIUM',
     description: '参考案例建议关注高权限账号授权、定期复核和离职人员权限回收。',
     source: 'CASE'
   });
-  ElMessage.success('已从案例库写入关注点');
+  notifyApiSuccess(response, '已从案例库写入关注点');
   await load();
 };
 
 const savePlan = async () => {
   await load();
-  ElMessage.success('评估方案已保存');
+  ElMessage.success('评估方案已刷新，记录在新增或编辑时保存');
 };
 
 const getErrorMessage = (error: unknown, fallback: string) => {
@@ -327,7 +331,7 @@ const exportTeamTemplate = async () => {
     downloadBlobFile(`评估方案团队模板-${projectId}.xlsx`, blob);
     ElMessage.success('评估方案团队模板已导出');
   } catch (error) {
-    ElMessage.error(`评估方案团队模板导出失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, `评估方案团队模板导出失败：${getErrorMessage(error, '请稍后重试')}`);
   }
 };
 
@@ -337,7 +341,7 @@ const exportPlan = async () => {
     downloadBlobFile(`评估方案团队-${projectId}.xlsx`, blob);
     ElMessage.success('评估方案团队已导出');
   } catch (error) {
-    ElMessage.error(`评估方案团队导出失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, `评估方案团队导出失败：${getErrorMessage(error, '请稍后重试')}`);
   }
 };
 
@@ -346,10 +350,11 @@ const importPlan = async (file: UploadFile) => {
   try {
     const payload = await planApi.importTeams(projectId, file.raw);
     normalizePlanTeamExcelImportResult(payload);
-    await load();
-    ElMessage.success('评估方案团队已导入');
+    notifyApiSuccess(payload, '评估方案团队已导入');
+    try { await load(); }
+    catch (error) { notifyApiError(error, '团队已导入，但列表刷新失败，请手动刷新'); }
   } catch (error) {
-    ElMessage.error(`评估方案团队导入失败：${getErrorMessage(error, '请检查导入文件或接口服务')}`);
+    notifyApiError(error, `评估方案团队导入失败：${getErrorMessage(error, '请检查导入文件或接口服务')}`);
   }
 };
 

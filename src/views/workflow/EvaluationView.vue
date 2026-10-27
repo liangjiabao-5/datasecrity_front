@@ -162,6 +162,7 @@
 </template>
 
 <script setup lang="ts">
+import { notifyApiError } from '@/utils/apiFeedback';
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -169,6 +170,7 @@ import type { UploadFile } from 'element-plus';
 import { DataAnalysis, Download, Refresh, Search, Upload } from '@element-plus/icons-vue';
 import ProjectHeader from '@/components/ProjectHeader.vue';
 import { evaluationApi } from '@/api/evaluationApi';
+import { notifyApiSuccess } from '@/utils/apiFeedback';
 import type { EvaluationImportError, EvaluationItem, EvaluationItemQuery, EvaluationRecordPayload, ScoreResult } from '@/types/evaluation';
 import type { EvaluationResult } from '@/types/workflow';
 import { downloadBlobFile } from '@/utils/fileActions';
@@ -180,6 +182,7 @@ const projectId = String(route.params.projectId || '');
 const loading = ref(false);
 const allItems = ref<EvaluationItem[]>([]);
 const items = ref<EvaluationItem[]>([]);
+const savedInlineResults = new Map<string, EvaluationItem['evaluationResult']>();
 const selectedRows = ref<EvaluationItem[]>([]);
 const total = ref(0);
 const editVisible = ref(false);
@@ -325,6 +328,7 @@ const loadItems = async () => {
       items.value = page.list;
       total.value = page.total;
     }
+    items.value.forEach((row) => savedInlineResults.set(row.id, row.evaluationResult));
   } finally {
     loading.value = false;
   }
@@ -360,23 +364,28 @@ const openEdit = (row: EvaluationItem) => {
 };
 
 const saveRecord = async () => {
-  await evaluationApi.saveRecord(projectId, editingItemId.value, {
+  const response = await evaluationApi.saveRecord(projectId, editingItemId.value, {
     evaluationResult: editForm.evaluationResult,
     evaluationRecord: editForm.evaluationRecord
   });
   editVisible.value = false;
-  ElMessage.success('现场测评记录已保存');
+  notifyApiSuccess(response, '现场测评记录已保存');
   await loadItems();
 };
 
 const updateInlineResult = async (row: EvaluationItem) => {
   inlineSavingId.value = row.id;
   try {
-    await evaluationApi.saveRecord(projectId, row.id, {
+    const response = await evaluationApi.saveRecord(projectId, row.id, {
       evaluationResult: row.evaluationResult,
       evaluationRecord: row.evaluationRecord
     });
-    ElMessage.success('符合情况已保存');
+    savedInlineResults.set(row.id, row.evaluationResult);
+    notifyApiSuccess(response, '符合情况已保存');
+  } catch (error) {
+    const previous = savedInlineResults.get(row.id);
+    if (previous !== undefined) row.evaluationResult = previous;
+    notifyApiError(error, '符合情况保存失败，请重试');
   } finally {
     inlineSavingId.value = '';
   }
@@ -390,11 +399,11 @@ const applyBatchResult = async () => {
   await ElMessageBox.confirm(`将对 ${selectedRows.value.length} 条检查项应用符合情况，是否继续？`, '批量修改确认', {
     type: 'warning'
   });
-  await evaluationApi.batchResult(projectId, {
+  const response = await evaluationApi.batchResult(projectId, {
     itemIds: selectedRows.value.map((row) => row.id),
     evaluationResult: batchResultValue.value
   });
-  ElMessage.success('批量修改已完成');
+  notifyApiSuccess(response, '批量修改已完成');
   await loadItems();
 };
 
@@ -410,7 +419,7 @@ const exportTemplate = async () => {
     downloadBlobFile(fileName || `现场测评导入模板-${projectId}.xlsx`, blob);
     ElMessage.success('现场测评导入模板已导出');
   } catch (error) {
-    ElMessage.error(`现场测评导入模板导出失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, `现场测评导入模板导出失败：${getErrorMessage(error, '请稍后重试')}`);
   } finally {
     exportingTemplate.value = false;
   }
@@ -423,7 +432,7 @@ const exportRecords = async () => {
     downloadBlobFile(fileName || `现场测评记录-${projectId}.xlsx`, blob);
     ElMessage.success('现场测评记录已导出');
   } catch (error) {
-    ElMessage.error(`现场测评记录导出失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, `现场测评记录导出失败：${getErrorMessage(error, '请稍后重试')}`);
   } finally {
     exportingRecords.value = false;
   }
@@ -441,7 +450,7 @@ const importRecords = async (file: UploadFile) => {
   if (!file.raw) return;
   try {
     const result = await evaluationApi.importRecords(projectId, file.raw);
-    const feedback = normalizeEvaluationImportResult(result);
+    const feedback = normalizeEvaluationImportResult(result.data);
 
     if (feedback.hasErrors) {
       importErrorRows.value = feedback.errors;
@@ -450,13 +459,15 @@ const importRecords = async (file: UploadFile) => {
       importErrorVisible.value = true;
       ElMessage.warning(`现场测评导入完成：成功 ${feedback.importedCount} 条，异常 ${feedback.failedCount} 条`);
     } else {
-      ElMessage.success(`现场测评数据已导入${feedback.importedCount ? `，共 ${feedback.importedCount} 条` : ''}`);
+      notifyApiSuccess(result, `现场测评数据已导入${feedback.importedCount ? `，共 ${feedback.importedCount} 条` : ''}`);
     }
 
-    await loadDirectoryItems();
-    await loadItems();
+    try {
+      await loadDirectoryItems();
+      await loadItems();
+    } catch (error) { notifyApiError(error, '现场测评已导入，但页面刷新失败，请手动刷新'); }
   } catch (error) {
-    ElMessage.error(`现场测评导入失败：${getErrorMessage(error, '请检查导入接口服务或文件格式')}`);
+    notifyApiError(error, `现场测评导入失败：${getErrorMessage(error, '请检查导入接口服务或文件格式')}`);
   }
 };
 

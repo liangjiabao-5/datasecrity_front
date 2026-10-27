@@ -9,7 +9,7 @@ const files = Object.fromEntries(
   await Promise.all(
     [
       'src/api/basicInfoApi.ts',
-      'doc/项目基本信息与评估团队Excel导入导出功能修改说明.md',
+      'doc/模块开发文档/项目基本信息与评估团队/项目基本信息与评估团队Excel导入导出功能修改说明.md',
       'docs/superpowers/specs/2026-06-15-basic-info-plan-team-excel-design.md'
     ].map(async (relativePath) => [
       relativePath,
@@ -29,7 +29,7 @@ function runTest(name, fn) {
 }
 
 const apiSource = files['src/api/basicInfoApi.ts'];
-const backendDoc = files['doc/项目基本信息与评估团队Excel导入导出功能修改说明.md'];
+const backendDoc = files['doc/模块开发文档/项目基本信息与评估团队/项目基本信息与评估团队Excel导入导出功能修改说明.md'];
 const designDoc = files['docs/superpowers/specs/2026-06-15-basic-info-plan-team-excel-design.md'];
 
 const currentBasicInfoLabels = [

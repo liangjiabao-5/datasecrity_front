@@ -1,3 +1,5 @@
+import type { ApiResponse } from '@/types/api';
+import { mockEnvelope } from '@/utils/apiFeedback';
 import { workflowDb } from '@/mock/workflowDb';
 import type { PageQuery, PageResult } from '@/types/api';
 import type {
@@ -151,41 +153,6 @@ const wordBlob = (payload: unknown) =>
     type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'
   });
 
-const legacyActivitiesToSurvey = (activities: ProcessingActivity[]): ProcessingActivitySurvey => {
-  const survey = emptyProcessingSurvey();
-  survey.involvedActivities = [...new Set(activities.map((item) => item.activityType))];
-  const collection = activities.find((item) => item.activityType === 'COLLECT');
-  if (collection) {
-    survey.collectionChannels = collection.scenario;
-    survey.collectionMethod = collection.method;
-    survey.collectionDataScope = collection.scale;
-    survey.collectionPurpose = collection.description;
-  }
-  const transfer = activities.find((item) => item.activityType === 'TRANSFER');
-  if (transfer) {
-    survey.onlineChannel = transfer.method;
-    survey.transferProtocol = transfer.protectionMeasures?.join('、') || '';
-  }
-  const store = activities.find((item) => item.activityType === 'STORE');
-  if (store) {
-    survey.storageLocation = store.scenario;
-    survey.storageMethod = store.method;
-  }
-  return survey;
-};
-
-const surveyToLegacyActivity = (payload: ProcessingActivitySurvey): Omit<ProcessingActivity, 'id'> => ({
-  activityType: payload.involvedActivities[0] || 'COLLECT',
-  scenario: payload.collectionChannels || payload.useScenario || payload.publicPurpose || payload.crossBorderPresence,
-  method: payload.collectionMethod || payload.onlineChannel || payload.useMethod || payload.provideMethod,
-  scale: payload.collectionDataScope || payload.publicDataScale || payload.providedPersonalInfoAndImportantData,
-  involvesPersonalInfo: [payload.collectionDataScope, payload.providedPersonalInfoAndImportantData, payload.crossBorderPresence].some((item) =>
-    item.includes('个人信息')
-  ),
-  protectionMeasures: [payload.transferProtocol, payload.dataInterface, payload.backupRedundancyStrategy].filter(Boolean),
-  description: '由数据处理活动调研问卷汇总生成'
-});
-
 export const surveyApi = {
   exportTemplate(projectId: string): Promise<{ blob: Blob; fileName?: string }> {
     if (useMock) {
@@ -205,21 +172,21 @@ export const surveyApi = {
     }
     return http.blobFile(`/projects/${projectId}/survey/export`, { timeout: 60000 });
   },
-  importWord(projectId: string, file: File): Promise<SurveyWordImportResult> {
+  importWord(projectId: string, file: File): Promise<ApiResponse<SurveyWordImportResult>> {
     if (useMock) {
-      return Promise.resolve({
+      return mockEnvelope(Promise.resolve({
         counts: {
           dataAssets: 0,
           personalInfo: 0,
           importantData: 0,
           coreData: 0
         }
-      });
+      }));
     }
 
     const formData = new FormData();
     formData.append('file', file);
-    return http.post<SurveyWordImportResult>(`/projects/${projectId}/survey/import`, formData, {
+    return http.postEnvelope<SurveyWordImportResult>(`/projects/${projectId}/survey/import`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 60000
     });
@@ -230,34 +197,34 @@ export const surveyApi = {
       .get<Partial<DataProcessorBasicSurvey>>(`/projects/${projectId}/survey/data-processor-basic`)
       .then((payload) => ({ ...emptyDataProcessorBasic(), ...payload }));
   },
-  saveDataProcessorBasic(projectId: string, payload: DataProcessorBasicSurvey): Promise<void> {
-    if (useMock) return workflowDb.saveDataProcessorBasic(projectId, payload);
-    return http.put(`/projects/${projectId}/survey/data-processor-basic`, payload);
+  saveDataProcessorBasic(projectId: string, payload: DataProcessorBasicSurvey): Promise<ApiResponse<void>> {
+    if (useMock) return mockEnvelope(workflowDb.saveDataProcessorBasic(projectId, payload));
+    return http.putEnvelope(`/projects/${projectId}/survey/data-processor-basic`, payload);
   },
   listBusinessSystems(projectId: string): Promise<BusinessSystem[]> {
     if (useMock) return workflowDb.listBusinessSystems(projectId);
     return http.get<SurveyListResponse<BusinessSystem>>(`/projects/${projectId}/survey/business-systems`).then(normalizeList);
   },
-  saveBusinessSystem(projectId: string, payload: Omit<BusinessSystem, 'id'>, id?: string): Promise<BusinessSystem> {
-    if (useMock) return workflowDb.saveBusinessSystem(projectId, payload, id);
+  saveBusinessSystem(projectId: string, payload: Omit<BusinessSystem, 'id'>, id?: string): Promise<ApiResponse<BusinessSystem>> {
+    if (useMock) return mockEnvelope(workflowDb.saveBusinessSystem(projectId, payload, id));
     return id
-      ? http.put(`/projects/${projectId}/survey/business-systems/${id}`, payload)
-      : http.post(`/projects/${projectId}/survey/business-systems`, payload);
+      ? http.putEnvelope(`/projects/${projectId}/survey/business-systems/${id}`, payload)
+      : http.postEnvelope(`/projects/${projectId}/survey/business-systems`, payload);
   },
-  uploadTopologyDiagram(projectId: string, businessSystemId: string, file: File): Promise<BusinessSystemDiagramUploadResult> {
-    if (useMock) return workflowDb.uploadBusinessSystemDiagram(projectId, businessSystemId, 'topology', file);
+  uploadTopologyDiagram(projectId: string, businessSystemId: string, file: File): Promise<ApiResponse<BusinessSystemDiagramUploadResult>> {
+    if (useMock) return mockEnvelope(Promise.resolve(workflowDb.uploadBusinessSystemDiagram(projectId, businessSystemId, 'topology', file)));
     const formData = new FormData();
     formData.append('file', file);
-    return http.post(`/projects/${projectId}/survey/business-systems/${businessSystemId}/topology-diagram`, formData, {
+    return http.postEnvelope(`/projects/${projectId}/survey/business-systems/${businessSystemId}/topology-diagram`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 60000
     });
   },
-  uploadDataFlowDiagram(projectId: string, businessSystemId: string, file: File): Promise<BusinessSystemDiagramUploadResult> {
-    if (useMock) return workflowDb.uploadBusinessSystemDiagram(projectId, businessSystemId, 'dataFlow', file);
+  uploadDataFlowDiagram(projectId: string, businessSystemId: string, file: File): Promise<ApiResponse<BusinessSystemDiagramUploadResult>> {
+    if (useMock) return mockEnvelope(Promise.resolve(workflowDb.uploadBusinessSystemDiagram(projectId, businessSystemId, 'dataFlow', file)));
     const formData = new FormData();
     formData.append('file', file);
-    return http.post(`/projects/${projectId}/survey/business-systems/${businessSystemId}/data-flow-diagram`, formData, {
+    return http.postEnvelope(`/projects/${projectId}/survey/business-systems/${businessSystemId}/data-flow-diagram`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 60000
     });
@@ -273,15 +240,15 @@ export const surveyApi = {
       .get<SurveyListResponse<DataAsset>>(`/projects/${projectId}/survey/data-assets`, { params })
       .then((payload) => normalizePage(payload, params));
   },
-  saveDataAsset(projectId: string, payload: Omit<DataAsset, 'id'>, id?: string): Promise<DataAsset> {
-    if (useMock) return workflowDb.saveDataAsset(projectId, payload, id);
+  saveDataAsset(projectId: string, payload: Omit<DataAsset, 'id'>, id?: string): Promise<ApiResponse<DataAsset>> {
+    if (useMock) return mockEnvelope(workflowDb.saveDataAsset(projectId, payload, id));
     return id
-      ? http.put(`/projects/${projectId}/survey/data-assets/${id}`, payload)
-      : http.post(`/projects/${projectId}/survey/data-assets`, payload);
+      ? http.putEnvelope(`/projects/${projectId}/survey/data-assets/${id}`, payload, { errorMode: 'manual' })
+      : http.postEnvelope(`/projects/${projectId}/survey/data-assets`, payload, { errorMode: 'manual' });
   },
-  deleteDataAsset(projectId: string, id: string): Promise<void> {
-    if (useMock) return workflowDb.deleteDataAsset(projectId, id);
-    return http.delete(`/projects/${projectId}/survey/data-assets/${id}`);
+  deleteDataAsset(projectId: string, id: string): Promise<ApiResponse<void>> {
+    if (useMock) return mockEnvelope(workflowDb.deleteDataAsset(projectId, id));
+    return http.deleteEnvelope(`/projects/${projectId}/survey/data-assets/${id}`);
   },
   listSpecialData(projectId: string, type: SpecialDataType, query?: Partial<SurveyPageQuery>): Promise<PageResult<SpecialDataRecord>> {
     const params = resolveSurveyPageQuery(query);
@@ -290,15 +257,15 @@ export const surveyApi = {
       .get<SurveyListResponse<SpecialDataRecord>>(`/projects/${projectId}/survey/${type}`, { params })
       .then((payload) => normalizePage(payload, params));
   },
-  saveSpecialData(projectId: string, type: SpecialDataType, payload: Omit<SpecialDataRecord, 'id'>, id?: string): Promise<SpecialDataRecord> {
-    if (useMock) return workflowDb.saveSpecialData(projectId, type, payload, id);
+  saveSpecialData(projectId: string, type: SpecialDataType, payload: Omit<SpecialDataRecord, 'id'>, id?: string): Promise<ApiResponse<SpecialDataRecord>> {
+    if (useMock) return mockEnvelope(workflowDb.saveSpecialData(projectId, type, payload, id));
     return id
-      ? http.put(`/projects/${projectId}/survey/${type}/${id}`, payload)
-      : http.post(`/projects/${projectId}/survey/${type}`, payload);
+      ? http.putEnvelope(`/projects/${projectId}/survey/${type}/${id}`, payload, { errorMode: 'manual' })
+      : http.postEnvelope(`/projects/${projectId}/survey/${type}`, payload, { errorMode: 'manual' });
   },
-  deleteSpecialData(projectId: string, type: SpecialDataType, id: string): Promise<void> {
-    if (useMock) return workflowDb.deleteSpecialData(projectId, type, id);
-    return http.delete(`/projects/${projectId}/survey/${type}/${id}`);
+  deleteSpecialData(projectId: string, type: SpecialDataType, id: string): Promise<ApiResponse<void>> {
+    if (useMock) return mockEnvelope(workflowDb.deleteSpecialData(projectId, type, id));
+    return http.deleteEnvelope(`/projects/${projectId}/survey/${type}/${id}`);
   },
   listProcessingActivities(projectId: string): Promise<ProcessingActivity[]> {
     if (useMock) return workflowDb.listProcessingActivities(projectId);
@@ -314,41 +281,21 @@ export const surveyApi = {
     if (useMock) return workflowDb.deleteProcessingActivity(projectId, id);
     return http.delete(`/projects/${projectId}/survey/processing-activities/${id}`);
   },
-  async getProcessingActivitySurvey(projectId: string): Promise<ProcessingActivitySurvey> {
+  getProcessingActivitySurvey(projectId: string): Promise<ProcessingActivitySurvey> {
     if (useMock) return workflowDb.getProcessingActivitySurvey(projectId);
-    try {
-      const payload = await http.get<Partial<ProcessingActivitySurvey>>(`/projects/${projectId}/survey/processing-activity-survey`);
-      return { ...emptyProcessingSurvey(), ...payload };
-    } catch {
-      const legacy = await http
-        .get<SurveyListResponse<ProcessingActivity>>(`/projects/${projectId}/survey/processing-activities`)
-        .then(normalizeList);
-      return legacyActivitiesToSurvey(legacy);
-    }
+    return http.get<Partial<ProcessingActivitySurvey>>(`/projects/${projectId}/survey/processing-activity-survey`)
+      .then((payload) => ({ ...emptyProcessingSurvey(), ...payload }));
   },
-  async saveProcessingActivitySurvey(projectId: string, payload: ProcessingActivitySurvey): Promise<void> {
-    if (useMock) return workflowDb.saveProcessingActivitySurvey(projectId, payload);
-    try {
-      await http.put(`/projects/${projectId}/survey/processing-activity-survey`, payload);
-    } catch {
-      const legacy = await http
-        .get<SurveyListResponse<ProcessingActivity>>(`/projects/${projectId}/survey/processing-activities`)
-        .then(normalizeList)
-        .catch(() => [] as ProcessingActivity[]);
-      const legacyPayload = surveyToLegacyActivity(payload);
-      if (legacy[0]?.id) {
-        await http.put(`/projects/${projectId}/survey/processing-activities/${legacy[0].id}`, legacyPayload);
-      } else {
-        await http.post(`/projects/${projectId}/survey/processing-activities`, legacyPayload);
-      }
-    }
+  saveProcessingActivitySurvey(projectId: string, payload: ProcessingActivitySurvey): Promise<ApiResponse<void>> {
+    if (useMock) return mockEnvelope(workflowDb.saveProcessingActivitySurvey(projectId, payload));
+    return http.putEnvelope(`/projects/${projectId}/survey/processing-activity-survey`, payload);
   },
   getSecurityProtection(projectId: string): Promise<SecurityProtection> {
     if (useMock) return workflowDb.getSecurityProtection(projectId);
     return http.get(`/projects/${projectId}/survey/security-protection`);
   },
-  saveSecurityProtection(projectId: string, payload: SecurityProtection): Promise<void> {
-    if (useMock) return workflowDb.saveSecurityProtection(projectId, payload);
-    return http.put(`/projects/${projectId}/survey/security-protection`, payload);
+  saveSecurityProtection(projectId: string, payload: SecurityProtection): Promise<ApiResponse<void>> {
+    if (useMock) return mockEnvelope(workflowDb.saveSecurityProtection(projectId, payload));
+    return http.putEnvelope(`/projects/${projectId}/survey/security-protection`, payload);
   }
 };

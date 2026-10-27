@@ -1,3 +1,5 @@
+import type { ApiResponse } from '@/types/api';
+import { mockEnvelope } from '@/utils/apiFeedback';
 import { workflowDb } from '@/mock/workflowDb';
 import type { PageQuery, PageResult } from '@/types/api';
 import type {
@@ -123,31 +125,33 @@ const excelBlob = (payload: unknown) =>
   });
 
 export const riskApi = {
-  refresh(projectId: string, overwriteManualChanges = false): Promise<RiskSummaryRefreshResult> {
-    if (useMock) return workflowDb.refreshRisks(projectId, overwriteManualChanges);
+  refresh(projectId: string, overwriteManualChanges = false): Promise<ApiResponse<RiskSummaryRefreshResult>> {
+    if (useMock) return mockEnvelope(Promise.resolve(workflowDb.refreshRisks(projectId, overwriteManualChanges)));
     const payload = overwriteManualChanges ? { overwriteManualChanges: true } : {};
-    return http.post<RiskSummaryRefreshResult>(`/projects/${projectId}/risk-summary/refresh`, payload, { timeout: 600000 });
+    return http.postEnvelope<RiskSummaryRefreshResult>(`/projects/${projectId}/risk-summary/refresh`, payload, { timeout: 600000 });
   },
   formOptions(projectId: string, relatedActivities: string[] = []): Promise<RiskFormOptions> {
     const activityValues = Array.from(new Set(relatedActivities.map((item) => item.trim()).filter(Boolean)));
     if (useMock) return workflowDb.getRiskFormOptions(projectId, activityValues);
     return http.get<RiskFormOptions>(`/projects/${projectId}/risk-form-options`, {
+      errorMode: 'manual',
       params: activityValues.length ? { relatedActivities: activityValues.join('、') } : undefined
     });
   },
   getMergeStatus(projectId: string): Promise<RiskSummaryMergeState> {
     if (useMock) return workflowDb.getRiskSummaryMerge(projectId);
-    return http.get<RiskSummaryMergeState>(`/projects/${projectId}/risk-summary/merge`);
+    return http.get<RiskSummaryMergeState>(`/projects/${projectId}/risk-summary/merge`, { errorMode: 'manual' });
   },
-  setMergeStatus(projectId: string, mergeEnabled: boolean): Promise<RiskSummaryMergeState> {
-    if (useMock) return workflowDb.setRiskSummaryMerge(projectId, mergeEnabled);
-    return http.put<RiskSummaryMergeState>(`/projects/${projectId}/risk-summary/merge`, { mergeEnabled });
+  setMergeStatus(projectId: string, mergeEnabled: boolean): Promise<ApiResponse<RiskSummaryMergeState>> {
+    if (useMock) return mockEnvelope(Promise.resolve(workflowDb.setRiskSummaryMerge(projectId, mergeEnabled)));
+    return http.putEnvelope<RiskSummaryMergeState>(`/projects/${projectId}/risk-summary/merge`, { mergeEnabled }, { errorMode: 'manual' });
   },
   async updateMergeData(projectId: string): Promise<RiskSummaryMergeUpdateResult> {
     if (useMock) return workflowDb.updateRiskSummaryMerge(projectId);
     const response = await http.postEnvelope<Omit<RiskSummaryMergeUpdateResult, 'message'>>(
       `/projects/${projectId}/risk-summary/merge/update`,
-      {}
+      {},
+      { errorMode: 'manual' }
     );
     return {
       ...response.data,
@@ -164,9 +168,9 @@ export const riskApi = {
         return { ...page, list: page.list.map(normalizeRiskSource) };
       });
   },
-  saveRiskSource(projectId: string, id: string, payload: RiskSourceSavePayload): Promise<void> {
-    if (useMock) return workflowDb.saveRiskSource(projectId, id, payload);
-    return http.put(`/projects/${projectId}/risk-sources/${id}`, payload);
+  saveRiskSource(projectId: string, id: string, payload: RiskSourceSavePayload): Promise<ApiResponse<void>> {
+    if (useMock) return mockEnvelope(workflowDb.saveRiskSource(projectId, id, payload));
+    return http.putEnvelope(`/projects/${projectId}/risk-sources/${id}`, payload);
   },
   async exportRiskSources(projectId: string): Promise<Blob> {
     if (useMock) {
@@ -175,11 +179,11 @@ export const riskApi = {
     }
     return http.blob(`/projects/${projectId}/risk-sources/export`);
   },
-  importRiskSources(projectId: string, file: File): Promise<RiskSummaryExcelImportResult> {
-    if (useMock) return Promise.resolve({ importedCount: 0, failedCount: 0, errors: [] });
+  importRiskSources(projectId: string, file: File): Promise<ApiResponse<RiskSummaryExcelImportResult>> {
+    if (useMock) return mockEnvelope(Promise.resolve({ importedCount: 0, failedCount: 0, errors: [] }));
     const formData = new FormData();
     formData.append('file', file);
-    return http.post<RiskSummaryExcelImportResult>(`/projects/${projectId}/risk-sources/import`, formData, {
+    return http.postEnvelope<RiskSummaryExcelImportResult>(`/projects/${projectId}/risk-sources/import`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 60000
     });
@@ -194,9 +198,9 @@ export const riskApi = {
         return { ...page, list: page.list.map(normalizeRiskItem) };
       });
   },
-  saveRiskItem(projectId: string, id: string, payload: RiskItemSavePayload): Promise<void> {
-    if (useMock) return workflowDb.saveRiskItem(projectId, id, payload);
-    return http.put(`/projects/${projectId}/risk-items/${id}`, payload);
+  saveRiskItem(projectId: string, id: string, payload: RiskItemSavePayload): Promise<ApiResponse<void>> {
+    if (useMock) return mockEnvelope(workflowDb.saveRiskItem(projectId, id, payload));
+    return http.putEnvelope(`/projects/${projectId}/risk-items/${id}`, payload);
   },
   async exportRiskItems(projectId: string): Promise<Blob> {
     if (useMock) {
@@ -205,11 +209,11 @@ export const riskApi = {
     }
     return http.blob(`/projects/${projectId}/risk-items/export`);
   },
-  importRiskItems(projectId: string, file: File): Promise<RiskSummaryExcelImportResult> {
-    if (useMock) return Promise.resolve({ importedCount: 0, failedCount: 0, errors: [] });
+  importRiskItems(projectId: string, file: File): Promise<ApiResponse<RiskSummaryExcelImportResult>> {
+    if (useMock) return mockEnvelope(Promise.resolve({ importedCount: 0, failedCount: 0, errors: [] }));
     const formData = new FormData();
     formData.append('file', file);
-    return http.post<RiskSummaryExcelImportResult>(`/projects/${projectId}/risk-items/import`, formData, {
+    return http.postEnvelope<RiskSummaryExcelImportResult>(`/projects/${projectId}/risk-items/import`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 60000
     });
@@ -224,9 +228,9 @@ export const riskApi = {
       .post<HarmAnalysisBatchResponse>(`/projects/${projectId}/risk-items/harm-analysis/suggest-batch`, payload, { timeout: 600000 })
       .then(normalizeHarmAnalysisSuggestions);
   },
-  applyRiskItemHarm(projectId: string, id: string, payload: HarmAnalysisApplyPayload): Promise<void> {
-    if (useMock) return workflowDb.applyRiskItemHarm(projectId, id, payload);
-    return http.post(`/projects/${projectId}/risk-items/${id}/harm-analysis/apply`, payload);
+  applyRiskItemHarm(projectId: string, id: string, payload: HarmAnalysisApplyPayload): Promise<ApiResponse<void>> {
+    if (useMock) return mockEnvelope(Promise.resolve(workflowDb.applyRiskItemHarm(projectId, id, payload)));
+    return http.postEnvelope(`/projects/${projectId}/risk-items/${id}/harm-analysis/apply`, payload);
   },
   listRiskSuggestions(projectId: string, query?: Partial<RiskPageQuery>): Promise<PageResult<RiskSuggestion>> {
     const pageQuery = resolveQuery(query);
@@ -238,8 +242,8 @@ export const riskApi = {
         return { ...page, list: page.list.map(normalizeRiskSuggestion) };
       });
   },
-  saveRiskSuggestion(projectId: string, id: string, payload: RiskSuggestionSavePayload): Promise<void> {
-    if (useMock) return workflowDb.saveRiskSuggestion(projectId, id, payload);
-    return http.put(`/projects/${projectId}/risk-suggestions/${id}`, payload);
+  saveRiskSuggestion(projectId: string, id: string, payload: RiskSuggestionSavePayload): Promise<ApiResponse<void>> {
+    if (useMock) return mockEnvelope(workflowDb.saveRiskSuggestion(projectId, id, payload));
+    return http.putEnvelope(`/projects/${projectId}/risk-suggestions/${id}`, payload);
   }
 };

@@ -337,6 +337,9 @@ import { computed, onMounted, reactive, ref } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus, Refresh, Search } from '@element-plus/icons-vue';
 import { knowledgeApi } from '@/api/knowledgeApi';
+import { notifyApiError, notifyApiSuccess, successMessage } from '@/utils/apiFeedback';
+import { exportJsonFile } from '@/utils/fileActions';
+import { useMock } from '@/utils/env';
 import type {
   AssessmentTemplate,
   HarmModel,
@@ -742,7 +745,7 @@ const loadActive = async () => {
 
     if (activeResource.value === 'matrix') syncMatrixRemarks();
     if (activeResource.value === 'harm') {
-      harmModels.value = ensurePrototypeHarmModels(page.list as HarmModel[]);
+      harmModels.value = useMock ? ensurePrototypeHarmModels(page.list as HarmModel[]) : page.list as HarmModel[];
       if (!activeHarmModelId.value || !harmModels.value.some((item) => getId(item) === activeHarmModelId.value)) {
         activeHarmModelId.value = harmModels.value[0] ? getId(harmModels.value[0]) : '';
       }
@@ -817,12 +820,12 @@ const saveCurrent = async () => {
   saving.value = true;
   try {
     if (editingId.value) {
-      await knowledgeApi.update(activeResource.value, editingId.value, currentForm.value as unknown as Omit<KnowledgeEntity, 'id'>);
-      ElMessage.success('知识库条目已更新');
+      const response = await knowledgeApi.update(activeResource.value, editingId.value, currentForm.value as unknown as Omit<KnowledgeEntity, 'id'>);
+      notifyApiSuccess(response, '知识库条目已更新');
     } else {
       const saved = await knowledgeApi.create(activeResource.value, currentForm.value as unknown as Omit<KnowledgeEntity, 'id'>);
-      if (activeResource.value === 'harm') activeHarmModelId.value = getId(saved);
-      ElMessage.success('知识库条目已新增');
+      if (activeResource.value === 'harm') activeHarmModelId.value = getId(saved.data);
+      notifyApiSuccess(saved, '知识库条目已新增');
     }
     editVisible.value = false;
     await loadActive();
@@ -834,16 +837,18 @@ const saveCurrent = async () => {
 const deleteRow = async (resource: KnowledgeResource, row: KnowledgeEntity) => {
   await ElMessageBox.confirm('被项目引用的知识库条目删除时，后端会自动改为停用。确认继续？', '删除确认', { type: 'warning' });
   const result = await knowledgeApi.delete(resource, getId(row));
-  if (result?.disabledDueToReference) {
-    ElMessage.warning('该条目已被项目引用，后端已改为停用状态');
+  if (result.data?.disabledDueToReference) {
+    ElMessage.warning(successMessage(result, '该条目已被项目引用，后端已改为停用状态'));
   } else {
-    ElMessage.success('知识库条目已删除');
+    notifyApiSuccess(result, '知识库条目已删除');
   }
   await loadActive();
 };
 
-const exportTemplate = (row: KnowledgeEntity) => {
-  window.open(knowledgeApi.exportAssessmentTemplateUrl(getId(row)), '_blank');
+const exportTemplate = async (row: KnowledgeEntity) => {
+  const data = await knowledgeApi.exportAssessmentTemplate(getId(row));
+  exportJsonFile(`评估模板-${getId(row)}.json`, data);
+  ElMessage.success('评估模板已导出');
 };
 
 const openScoreDetail = async (row: KnowledgeEntity) => {
@@ -859,8 +864,8 @@ const openMatrixDetail = async (row: KnowledgeEntity) => {
 const saveMatrixRemark = async (row: KnowledgeEntity) => {
   const id = getId(row);
   const matrix = row as RiskMatrix;
-  await knowledgeApi.update('matrix', id, { ...matrix, remark: matrixRemarkDrafts[id] || '' } as Omit<RiskMatrix, 'id'>);
-  ElMessage.success('备注已保存');
+  const response = await knowledgeApi.update('matrix', id, { ...matrix, remark: matrixRemarkDrafts[id] || '' } as Omit<RiskMatrix, 'id'>);
+  notifyApiSuccess(response, '备注已保存');
   await loadActive();
 };
 
@@ -874,9 +879,8 @@ const loadHarmRules = async () => {
     const page = await knowledgeApi.listHarmRules(activeHarmModelId.value, harmRuleQuery);
     harmRules.value = page.list;
   } catch (error) {
-    const isPrototypeOnly = prototypeHarmModels.some((model) => getId(model) === activeHarmModelId.value);
-    if (!isPrototypeOnly) throw error;
     harmRules.value = [];
+    notifyApiError(error, '危害程度规则加载失败，请重试');
   } finally {
     nestedLoading.value = false;
   }
@@ -901,20 +905,21 @@ const openHarmRule = (row?: HarmRule) => {
 
 const saveHarmRule = async () => {
   if (!activeHarmModelId.value) return;
+  let response;
   if (harmRuleEditingId.value) {
-    await knowledgeApi.updateHarmRule(activeHarmModelId.value, harmRuleEditingId.value, harmRuleForm);
+    response = await knowledgeApi.updateHarmRule(activeHarmModelId.value, harmRuleEditingId.value, harmRuleForm);
   } else {
-    await knowledgeApi.createHarmRule(activeHarmModelId.value, harmRuleForm);
+    response = await knowledgeApi.createHarmRule(activeHarmModelId.value, harmRuleForm);
   }
   harmRuleVisible.value = false;
-  ElMessage.success('风险等级规则已保存');
+  notifyApiSuccess(response, '风险等级规则已保存');
   await loadHarmRules();
 };
 
 const deleteHarmRule = async (row: HarmRule) => {
   await ElMessageBox.confirm('确认删除该风险等级规则？', '删除确认', { type: 'warning' });
-  await knowledgeApi.deleteHarmRule(activeHarmModelId.value, getId(row));
-  ElMessage.success('规则已删除');
+  const response = await knowledgeApi.deleteHarmRule(activeHarmModelId.value, getId(row));
+  notifyApiSuccess(response, '规则已删除');
   await loadHarmRules();
 };
 

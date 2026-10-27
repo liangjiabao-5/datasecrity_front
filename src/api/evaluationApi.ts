@@ -1,3 +1,5 @@
+import type { ApiResponse } from '@/types/api';
+import { mockEnvelope } from '@/utils/apiFeedback';
 import { workflowDb } from '@/mock/workflowDb';
 import type { PageResult } from '@/types/api';
 import type {
@@ -26,13 +28,13 @@ export const evaluationApi = {
     if (useMock) return workflowDb.listEvaluationItems(projectId, params);
     return http.get(`/projects/${projectId}/evaluation/items`, { params });
   },
-  saveRecord(projectId: string, itemId: string, payload: EvaluationRecordPayload): Promise<void> {
-    if (useMock) return workflowDb.saveEvaluationRecord(projectId, itemId, payload);
-    return http.put(`/projects/${projectId}/evaluation/items/${itemId}/record`, payload);
+  saveRecord(projectId: string, itemId: string, payload: EvaluationRecordPayload): Promise<ApiResponse<void>> {
+    if (useMock) return mockEnvelope(workflowDb.saveEvaluationRecord(projectId, itemId, payload));
+    return http.putEnvelope(`/projects/${projectId}/evaluation/items/${itemId}/record`, payload);
   },
-  batchResult(projectId: string, payload: BatchEvaluationResultPayload): Promise<void> {
-    if (useMock) return workflowDb.batchEvaluationResult(projectId, payload);
-    return http.post(`/projects/${projectId}/evaluation/items/batch-result`, payload);
+  batchResult(projectId: string, payload: BatchEvaluationResultPayload): Promise<ApiResponse<void>> {
+    if (useMock) return mockEnvelope(workflowDb.batchEvaluationResult(projectId, payload));
+    return http.postEnvelope(`/projects/${projectId}/evaluation/items/batch-result`, payload);
   },
   calculateScore(projectId: string): Promise<ScoreResult> {
     if (useMock) return workflowDb.calculateScore(projectId);
@@ -56,19 +58,19 @@ export const evaluationApi = {
     }
     return http.blobFile(`/projects/${projectId}/evaluation/export`, { timeout: 60000 });
   },
-  importRecords(projectId: string, file: File): Promise<EvaluationImportResult> {
+  importRecords(projectId: string, file: File): Promise<ApiResponse<EvaluationImportResult>> {
     if (useMock) {
-      return Promise.resolve({
+      return mockEnvelope(Promise.resolve({
         projectId,
         importedCount: 0,
         failedCount: 0,
         errors: []
-      });
+      }));
     }
 
     const formData = new FormData();
     formData.append('file', file);
-    return http.post<EvaluationImportResult>(`/projects/${projectId}/evaluation/import`, formData, {
+    return http.postEnvelope<EvaluationImportResult>(`/projects/${projectId}/evaluation/import`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 60000
     });

@@ -9,7 +9,7 @@ const filesToCheck = [
   'src/api/knowledgeApi.ts',
   'src/mock/db.ts',
   'src/utils/labels.ts',
-  'src/views/projects/ProjectListView.vue'
+  'src/components/project/ProjectDetailDialog.vue'
 ];
 
 const sources = await Promise.all(
@@ -68,7 +68,7 @@ runTest('mock project seed data only uses backend-supported system types', () =>
 
 runTest('project detail formats the system type enum as its Chinese label', () => {
   const labels = sources.find((item) => item.relativePath === 'src/utils/labels.ts');
-  const projectListView = sources.find((item) => item.relativePath === 'src/views/projects/ProjectListView.vue');
+  const projectListView = sources.find((item) => item.relativePath === 'src/components/project/ProjectDetailDialog.vue');
 
   assert.ok(labels);
   assert.ok(projectListView);

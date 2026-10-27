@@ -38,10 +38,12 @@
 </template>
 
 <script setup lang="ts">
+import { notifyApiError } from '@/utils/apiFeedback';
 import { ref, watch } from 'vue';
 import { ElMessage, ElMessageBox } from 'element-plus';
 import { Plus } from '@element-plus/icons-vue';
 import { projectMemberApi } from '@/api/projectMemberApi';
+import { notifyApiSuccess } from '@/utils/apiFeedback';
 import type { ProjectListItem } from '@/types/project';
 import type { ProjectMemberList } from '@/types/projectMember';
 
@@ -71,16 +73,41 @@ const loadMembers = async () => {
     if (currentVersion === memberLoadVersion) {
       members.value = null;
       const message = error && typeof error === 'object' && 'message' in error ? String(error.message) : '请稍后重试';
-      ElMessage.error(`协作人列表加载失败：${message}`);
+      notifyApiError(error, `协作人列表加载失败：${message}`);
     }
   } finally {
     if (currentVersion === memberLoadVersion) loading.value = false;
   }
 };
 const loadCandidates = async () => { candidateLoading.value = true; try { const result = await projectMemberApi.candidates(props.project.id, { pageNo: 1, pageSize: 100, keyword: candidateKeyword.value || undefined }); candidates.value = result.list; selectedCandidateId.value = ''; } finally { candidateLoading.value = false; } };
-const addMember = async () => { if (!selectedCandidateId.value) { ElMessage.warning('请选择要添加的用户'); return; } adding.value = true; try { await projectMemberApi.add(props.project.id, selectedCandidateId.value); ElMessage.success('协作人已添加'); addVisible.value = false; await loadMembers(); } finally { adding.value = false; } };
-const removeMember = async (userId: string, displayName: string) => { await ElMessageBox.confirm(`确认移除协作人“${displayName}”？该用户将立即失去项目访问权限。`, '移除确认', { type: 'warning' }); await projectMemberApi.remove(props.project.id, userId); ElMessage.success('协作人已移除'); await loadMembers(); };
-const transferOwner = async () => { if (!selectedCandidateId.value) { ElMessage.warning('请选择新的项目所有者'); return; } await ElMessageBox.confirm('确认转交项目所有者？原所有者不会自动成为协作人。', '转交确认', { type: 'warning' }); transferring.value = true; try { await projectMemberApi.transferOwner(props.project.id, selectedCandidateId.value); ElMessage.success('项目所有者已转交'); transferVisible.value = false; await loadMembers(); emit('owner-transferred'); } finally { transferring.value = false; } };
+const addMember = async () => {
+  if (!selectedCandidateId.value) { ElMessage.warning('请选择要添加的用户'); return; }
+  adding.value = true;
+  try {
+    const response = await projectMemberApi.add(props.project.id, selectedCandidateId.value);
+    notifyApiSuccess(response, '协作人已添加');
+    addVisible.value = false;
+    await loadMembers();
+  } finally { adding.value = false; }
+};
+const removeMember = async (userId: string, displayName: string) => {
+  await ElMessageBox.confirm(`确认移除协作人“${displayName}”？该用户将立即失去项目访问权限。`, '移除确认', { type: 'warning' });
+  const response = await projectMemberApi.remove(props.project.id, userId);
+  notifyApiSuccess(response, '协作人已移除');
+  await loadMembers();
+};
+const transferOwner = async () => {
+  if (!selectedCandidateId.value) { ElMessage.warning('请选择新的项目所有者'); return; }
+  await ElMessageBox.confirm('确认转交项目所有者？原所有者不会自动成为协作人。', '转交确认', { type: 'warning' });
+  transferring.value = true;
+  try {
+    const response = await projectMemberApi.transferOwner(props.project.id, selectedCandidateId.value);
+    notifyApiSuccess(response, '项目所有者已转交');
+    transferVisible.value = false;
+    await loadMembers();
+    emit('owner-transferred');
+  } finally { transferring.value = false; }
+};
 watch(
   () => [props.modelValue, props.project.id] as const,
   ([visible]) => {

@@ -215,7 +215,7 @@
                     :show-file-list="false"
                     :accept="diagramImageAccept"
                     :disabled="diagramUploading.topology"
-                    :on-change="(file) => uploadBusinessDiagram('topology', file)"
+                    :on-change="(file: UploadFile) => uploadBusinessDiagram('topology', file)"
                   >
                     <el-button :icon="Upload" :loading="diagramUploading.topology">上传拓扑图</el-button>
                   </el-upload>
@@ -230,7 +230,7 @@
                     :show-file-list="false"
                     :accept="diagramImageAccept"
                     :disabled="diagramUploading.dataFlow"
-                    :on-change="(file) => uploadBusinessDiagram('dataFlow', file)"
+                    :on-change="(file: UploadFile) => uploadBusinessDiagram('dataFlow', file)"
                   >
                     <el-button :icon="Upload" :loading="diagramUploading.dataFlow">上传数据流转图</el-button>
                   </el-upload>
@@ -540,6 +540,7 @@
 </template>
 
 <script setup lang="ts">
+import { notifyApiError } from '@/utils/apiFeedback';
 import { onMounted, reactive, ref, watch } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -548,6 +549,8 @@ import { Download, Plus, Upload } from '@element-plus/icons-vue';
 import ProjectHeader from '@/components/ProjectHeader.vue';
 import { fileApi } from '@/api/fileApi';
 import { surveyApi } from '@/api/surveyApi';
+import { getApiErrorMessage, notifyApiSuccess } from '@/utils/apiFeedback';
+import type { ApiResponse } from '@/types/api';
 import type {
   BusinessSystem,
   DataAsset,
@@ -1047,14 +1050,14 @@ function isAllowedDiagramFile(file: UploadFile) {
 function showDiagramUploadError(error: unknown) {
   const apiError = error as Partial<ApiError>;
   const message = apiError.code ? diagramUploadErrorMessages[apiError.code] || apiError.message : undefined;
-  ElMessage.error(message || '图片上传失败，请稍后重试');
+  notifyApiError(error, message || '图片上传失败，请稍后重试');
 }
 
 async function ensureBusinessSystemId() {
   if (businessId.value) return businessId.value;
-  const saved = await surveyApi.saveBusinessSystem(projectId, businessPayload());
-  applySavedBusiness(saved);
-  return saved.id;
+  const response = await surveyApi.saveBusinessSystem(projectId, businessPayload());
+  applySavedBusiness(response.data);
+  return response.data.id;
 }
 
 async function uploadBusinessDiagram(type: DiagramUploadType, file: UploadFile) {
@@ -1070,12 +1073,13 @@ async function uploadBusinessDiagram(type: DiagramUploadType, file: UploadFile) 
   diagramUploading[type] = true;
   try {
     const businessSystemId = await ensureBusinessSystemId();
-    const result = type === 'topology'
+    const response = type === 'topology'
       ? await surveyApi.uploadTopologyDiagram(projectId, businessSystemId, file.raw)
       : await surveyApi.uploadDataFlowDiagram(projectId, businessSystemId, file.raw);
+    const result = response.data;
     applyUploadedBusinessSystem(result.businessSystem);
     diagramDownloadUrls[type] = result.file.downloadUrl || fileApi.downloadUrl(result.file.fileId);
-    ElMessage.success(`${diagramUploadLabels[type]}上传成功`);
+    notifyApiSuccess(response, `${diagramUploadLabels[type]}上传成功`);
   } catch (error) {
     showDiagramUploadError(error);
   } finally {
@@ -1083,9 +1087,14 @@ async function uploadBusinessDiagram(type: DiagramUploadType, file: UploadFile) 
   }
 }
 
-function openDiagramDownload(type: DiagramUploadType) {
-  const url = diagramDownloadUrls[type];
-  if (url) window.open(url, '_blank');
+async function openDiagramDownload(type: DiagramUploadType) {
+  const fileId = type === 'topology' ? businessForm.topologyFileId : businessForm.businessFlowFileId;
+  if (!fileId) return;
+  try {
+    const result = await fileApi.download(fileId);
+    downloadBlobFile(result.fileName || `${diagramUploadLabels[type]}`, result.blob);
+    ElMessage.success('图片下载已开始');
+  } catch (error) { notifyApiError(error, '图片下载失败，请稍后重试'); }
 }
 
 async function load() {
@@ -1185,7 +1194,8 @@ function addDataAsset() {
 async function removeDataAsset(row: DataAsset) {
   if (!isTemporary(row.id)) {
     await ElMessageBox.confirm('确认删除该数据资产？', '删除确认', { type: 'warning' });
-    await surveyApi.deleteDataAsset(projectId, row.id);
+    const response = await surveyApi.deleteDataAsset(projectId, row.id);
+    notifyApiSuccess(response, '数据资产已删除');
   }
   dataAssets.value = dataAssets.value.filter((item) => item.id !== row.id);
 }
@@ -1203,53 +1213,65 @@ function addSpecialRow(type: SpecialDataType) {
 async function removeSpecialRow(type: SpecialDataType, row: SpecialDataRecord) {
   if (!isTemporary(row.id)) {
     await ElMessageBox.confirm('确认删除该记录？', '删除确认', { type: 'warning' });
-    await surveyApi.deleteSpecialData(projectId, type, row.id);
+    const response = await surveyApi.deleteSpecialData(projectId, type, row.id);
+    notifyApiSuccess(response, '记录已删除');
   }
   const rows = rowListByType(type);
   rows.value = rows.value.filter((item) => item.id !== row.id);
 }
 
 async function saveBusiness() {
-  const saved = await surveyApi.saveBusinessSystem(projectId, businessPayload(), businessId.value || undefined);
-  applySavedBusiness(saved);
-  ElMessage.success('业务和信息系统调研已保存');
+  const response = await surveyApi.saveBusinessSystem(projectId, businessPayload(), businessId.value || undefined);
+  applySavedBusiness(response.data);
+  notifyApiSuccess(response, '业务和信息系统调研已保存');
 }
 
 async function saveProcessorBasic() {
-  await surveyApi.saveDataProcessorBasic(projectId, JSON.parse(JSON.stringify(processorBasicForm)) as DataProcessorBasicSurvey);
-  ElMessage.success('数据处理者基本情况调研已保存');
+  const response = await surveyApi.saveDataProcessorBasic(projectId, JSON.parse(JSON.stringify(processorBasicForm)) as DataProcessorBasicSurvey);
+  notifyApiSuccess(response, '数据处理者基本情况调研已保存');
 }
 
 async function saveAssets() {
-  for (const row of dataAssets.value) {
-    const { id, ...payload } = row;
-    const saved = await surveyApi.saveDataAsset(projectId, payload, isTemporary(id) ? undefined : id);
-    row.id = saved.id;
+  let completed = 0;
+  let lastResponse: ApiResponse<unknown> | undefined;
+  const recordSaved = (response: ApiResponse<unknown>) => { completed += 1; lastResponse = response; };
+  try {
+    for (const row of dataAssets.value) {
+      const { id, ...payload } = row;
+      const saved = await surveyApi.saveDataAsset(projectId, payload, isTemporary(id) ? undefined : id);
+      row.id = saved.data.id;
+      recordSaved(saved);
+    }
+    await saveSpecialRows('personal-info', personalInfoRows.value, recordSaved);
+    await saveSpecialRows('important-data', importantDataRows.value, recordSaved);
+    await saveSpecialRows('core-data', coreDataRows.value, recordSaved);
+  } catch (error) {
+    notifyApiError({ ...(error as object), message: `本次已保存 ${completed} 条，后续记录保存失败：${getApiErrorMessage(error)}` });
+    return;
   }
-  await saveSpecialRows('personal-info', personalInfoRows.value);
-  await saveSpecialRows('important-data', importantDataRows.value);
-  await saveSpecialRows('core-data', coreDataRows.value);
-  await loadAssets();
-  ElMessage.success('数据资产调研已保存');
+  notifyApiSuccess(lastResponse, '数据资产调研已保存');
+  try { await loadAssets(); }
+  catch (error) { notifyApiError(error, '数据资产已保存，但列表刷新失败，请手动刷新'); }
 }
 
-async function saveSpecialRows(type: SpecialDataType, rows: SpecialDataRecord[]) {
+async function saveSpecialRows(type: SpecialDataType, rows: SpecialDataRecord[], onSaved: (response: ApiResponse<unknown>) => void) {
   for (const row of rows) {
     const { id, ...payload } = row;
     const saved = await surveyApi.saveSpecialData(projectId, type, payload, isTemporary(id) ? undefined : id);
-    row.id = saved.id;
+    row.id = saved.data.id;
+    onSaved(saved);
   }
 }
 
 async function saveProcessing() {
   clearDisabledProcessingSections();
-  await surveyApi.saveProcessingActivitySurvey(projectId, JSON.parse(JSON.stringify(processingSurvey)) as ProcessingActivitySurvey);
-  ElMessage.success('数据处理活动调研已保存');
+  const response = await surveyApi.saveProcessingActivitySurvey(projectId, JSON.parse(JSON.stringify(processingSurvey)) as ProcessingActivitySurvey);
+  notifyApiSuccess(response, '数据处理活动调研已保存');
 }
 
 async function saveSecurity() {
-  await surveyApi.saveSecurityProtection(projectId, JSON.parse(JSON.stringify(security)) as SecurityProtection);
-  ElMessage.success('安全防护措施调研已保存');
+  const response = await surveyApi.saveSecurityProtection(projectId, JSON.parse(JSON.stringify(security)) as SecurityProtection);
+  notifyApiSuccess(response, '安全防护措施调研已保存');
 }
 
 async function saveCurrentTab() {
@@ -1275,7 +1297,7 @@ async function downloadSurveyTemplate() {
     downloadBlobFile(fileName || `信息调研导入模板-${projectId}.docx`, blob);
     ElMessage.success('信息调研导入模板已下载');
   } catch (error) {
-    ElMessage.error(`信息调研导入模板下载失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, `信息调研导入模板下载失败：${getErrorMessage(error, '请稍后重试')}`);
   } finally {
     exportingTemplate.value = false;
   }
@@ -1295,14 +1317,16 @@ async function importSurveyWord(file: UploadFile) {
 
   importingWord.value = true;
   try {
-    await surveyApi.importWord(projectId, file.raw);
+    const response = await surveyApi.importWord(projectId, file.raw);
+    const counts = response.data.counts;
+    const detail = counts ? `：数据资产 ${counts.dataAssets || 0} 条，个人信息 ${counts.personalInfo || 0} 条，重要数据 ${counts.importantData || 0} 条，核心数据 ${counts.coreData || 0} 条` : '';
+    notifyApiSuccess(response, `信息调研 Word 导入成功${detail}`);
     try {
       await loadAllSurveyTabs();
     } catch (refreshError) {
-      ElMessage.warning(`信息调研 Word 导入成功，但页面刷新失败：${getErrorMessage(refreshError, '请手动刷新页面')}`);
+      notifyApiError(refreshError, '信息调研 Word 已导入，但页面刷新失败，请手动刷新');
       return;
     }
-    ElMessage.success('信息调研 Word 导入成功');
   } catch (error) {
     const feedback = normalizeSurveyWordImportError(error);
     importErrorMessage.value = feedback.message;
@@ -1310,7 +1334,7 @@ async function importSurveyWord(file: UploadFile) {
     if (feedback.hasErrors) {
       importErrorVisible.value = true;
     }
-    ElMessage.error(`信息调研 Word 导入失败：${feedback.message}`);
+    notifyApiError(error, `信息调研 Word 导入失败：${feedback.message}`);
   } finally {
     importingWord.value = false;
   }
@@ -1323,7 +1347,7 @@ async function exportSurveyWord() {
     downloadBlobFile(fileName || `信息调研-${projectId}.docx`, blob);
     ElMessage.success('信息调研 Word 已导出');
   } catch (error) {
-    ElMessage.error(`信息调研 Word 导出失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, `信息调研 Word 导出失败：${getErrorMessage(error, '请稍后重试')}`);
   } finally {
     exportingWord.value = false;
   }

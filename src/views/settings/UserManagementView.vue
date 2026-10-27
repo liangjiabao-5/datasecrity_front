@@ -53,6 +53,7 @@ import { onMounted, reactive, ref } from 'vue';
 import { ElMessage, type FormInstance, type FormRules } from 'element-plus';
 import { Plus, Refresh, Search } from '@element-plus/icons-vue';
 import { roleApi, userApi } from '@/api/systemApi';
+import { notifyApiSuccess } from '@/utils/apiFeedback';
 import type { SystemRole, SystemUser, UserStatus } from '@/types/auth';
 
 const defaultForm = () => ({ username: '', displayName: '', mobile: '', email: '', initialPassword: '', status: 'ACTIVE' as UserStatus, roleIds: [] as string[] });
@@ -81,8 +82,29 @@ const resetQuery = async () => { query.keyword = ''; query.status = ''; query.ro
 const assignForm = (user?: SystemUser) => { Object.assign(form, defaultForm(), user ? { username: user.username, displayName: user.displayName, mobile: user.mobile || '', email: user.email || '', status: user.status, roleIds: user.roles.map((role) => role.id) } : {}); };
 const openCreate = () => { editingId.value = ''; assignForm(); formVisible.value = true; };
 const openEdit = async (userId: string) => { const user = await userApi.detail(userId); editingId.value = user.id; assignForm(user); formVisible.value = true; };
-const submitForm = async () => { const valid = await formRef.value?.validate().catch(() => false); if (!valid) return; saving.value = true; try { if (editingId.value) await userApi.update(editingId.value, { displayName: form.displayName, mobile: form.mobile, email: form.email, status: form.status, roleIds: form.roleIds }); else await userApi.create({ username: form.username, displayName: form.displayName, mobile: form.mobile, email: form.email, initialPassword: form.initialPassword, roleIds: form.roleIds }); ElMessage.success('用户信息已保存'); formVisible.value = false; await loadUsers(); } finally { saving.value = false; } };
+const submitForm = async () => {
+  const valid = await formRef.value?.validate().catch(() => false);
+  if (!valid) return;
+  saving.value = true;
+  try {
+    const response = editingId.value
+      ? await userApi.update(editingId.value, { displayName: form.displayName, mobile: form.mobile, email: form.email, status: form.status, roleIds: form.roleIds })
+      : await userApi.create({ username: form.username, displayName: form.displayName, mobile: form.mobile, email: form.email, initialPassword: form.initialPassword, roleIds: form.roleIds });
+    notifyApiSuccess(response, '用户信息已保存');
+    formVisible.value = false;
+    await loadUsers();
+  } finally { saving.value = false; }
+};
 const openResetPassword = (user: SystemUser) => { resetTarget.value = user; resetPassword.value = ''; resetVisible.value = true; };
-const confirmResetPassword = async () => { if (!/^(?=.*[A-Za-z])(?=.*\d)\S{8,64}$/.test(resetPassword.value)) { ElMessage.warning('密码须为 8-64 位，且同时包含字母和数字'); return; } if (!resetTarget.value) return; resetting.value = true; try { await userApi.resetPassword(resetTarget.value.id, resetPassword.value); ElMessage.success('密码已重置'); resetVisible.value = false; } finally { resetting.value = false; } };
+const confirmResetPassword = async () => {
+  if (!/^(?=.*[A-Za-z])(?=.*\d)\S{8,64}$/.test(resetPassword.value)) { ElMessage.warning('密码须为 8-64 位，且同时包含字母和数字'); return; }
+  if (!resetTarget.value) return;
+  resetting.value = true;
+  try {
+    const response = await userApi.resetPassword(resetTarget.value.id, resetPassword.value);
+    notifyApiSuccess(response, '密码已重置');
+    resetVisible.value = false;
+  } finally { resetting.value = false; }
+};
 onMounted(async () => { await loadRoles(); await loadUsers(); });
 </script>

@@ -31,7 +31,7 @@ runTest('risk API exposes the risk summary merge switch endpoint', () => {
   assert.match(riskTypes, /mergeConflictFields\?: string\[\]/);
   assert.match(riskTypes, /mergeConflictMessage\?: string/);
   assert.match(riskApi, /getMergeStatus\(projectId: string\): Promise<RiskSummaryMergeState>/);
-  assert.match(riskApi, /setMergeStatus\(projectId: string, mergeEnabled: boolean\): Promise<RiskSummaryMergeState>/);
+  assert.match(riskApi, /setMergeStatus\(projectId: string, mergeEnabled: boolean\): Promise<ApiResponse<RiskSummaryMergeState>>/);
   assert.match(riskApi, /updateMergeData\(projectId: string\): Promise<RiskSummaryMergeUpdateResult>/);
   assert.match(riskApi, /risk-summary\/merge/);
   assert.match(riskApi, /risk-summary\/merge\/update/);
@@ -59,7 +59,7 @@ runTest('summary source tab renders and persists the merge switch and update but
 
 runTest('merge required field errors use the backend message directly', () => {
   assert.match(summaryView, /RISK_MERGE_REQUIRED_FIELDS_MISSING/);
-  assert.match(summaryView, /ElMessage\.warning\(getErrorMessage\(error/);
+  assert.match(summaryView, /notifyApiError\(error, '风险源清单存在未填写完整的行，请补充后再进行合并。', 'warning'\)/);
   assert.match(summaryView, /mergeEnabled\.value = false/);
 });
 

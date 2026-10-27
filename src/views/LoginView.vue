@@ -28,10 +28,12 @@
 </template>
 
 <script setup lang="ts">
+import { notifyApiError } from '@/utils/apiFeedback';
 import { reactive, ref } from 'vue';
-import { ElMessage, type FormInstance, type FormRules } from 'element-plus';
+import { type FormInstance, type FormRules } from 'element-plus';
 import { useRoute, useRouter } from 'vue-router';
 import { useAuthStore } from '@/stores/auth';
+import { notifyApiSuccess } from '@/utils/apiFeedback';
 
 const router = useRouter();
 const route = useRoute();
@@ -50,12 +52,14 @@ const submit = async () => {
 
   submitting.value = true;
   try {
-    await auth.login(form);
-    ElMessage.success('登录成功');
-    const redirect = typeof route.query.redirect === 'string' && route.query.redirect.startsWith('/') ? route.query.redirect : '/projects';
+    const response = await auth.login(form);
+    notifyApiSuccess(response, '登录成功');
+    const target = route.query.redirect;
+    const redirect = typeof target === 'string' && target.startsWith('/') && !target.startsWith('//') && target.split('?')[0] !== '/login'
+      ? target : '/dashboard';
     await router.replace(redirect);
   } catch (error) {
-    ElMessage.error((error as { message?: string })?.message || '登录失败，请检查用户名和密码');
+    notifyApiError(error, (error as { message?: string })?.message || '登录失败，请检查用户名和密码');
   } finally {
     submitting.value = false;
   }

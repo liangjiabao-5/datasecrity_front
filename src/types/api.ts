@@ -10,6 +10,8 @@ export interface ApiError {
   message: string;
   data?: unknown;
   traceId?: string;
+  status?: number;
+  notified?: boolean;
 }
 
 export interface PageQuery {

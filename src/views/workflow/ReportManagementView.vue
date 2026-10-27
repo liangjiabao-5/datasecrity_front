@@ -24,15 +24,17 @@
         class="report-notice"
       />
 
+      <el-alert v-if="listError || pollingError" :title="listError || pollingError" type="warning" :closable="false" show-icon class="report-notice" />
+      <el-alert v-if="taskWarnings.length" :title="taskWarnings.join('；')" type="warning" :closable="false" show-icon class="report-notice" />
       <el-table v-loading="loading" :data="rows" row-key="reportId" border>
         <el-table-column type="index" label="序号" width="70" :index="rowIndex" />
         <el-table-column prop="reportName" label="报告名称" min-width="240" show-overflow-tooltip />
         <el-table-column prop="reportTypeName" label="类型" min-width="190" show-overflow-tooltip />
         <el-table-column label="生成状态" width="130">
           <template #default="{ row }">
-            <el-tag :type="statusConfig[row.status].type" effect="light">
+            <el-tag :type="reportStatusConfig(row.status).type" effect="light">
               <el-icon v-if="isActiveStatus(row.status)" class="is-loading"><Loading /></el-icon>
-              {{ statusConfig[row.status].label }}
+              {{ reportStatusConfig(row.status).label }}
             </el-tag>
           </template>
         </el-table-column>
@@ -186,6 +188,7 @@
 </template>
 
 <script setup lang="ts">
+import { isIgnoredError, notifyApiError, notifyApiSuccess } from '@/utils/apiFeedback';
 import { computed, onBeforeUnmount, onMounted, reactive, ref } from 'vue';
 import { useRoute } from 'vue-router';
 import { ElMessage, ElMessageBox } from 'element-plus';
@@ -220,6 +223,10 @@ const readiness = ref<ReportReadinessResult | null>(null);
 const companyName = ref('');
 const reportProjectName = ref('');
 const activeTaskIds = new Set<string>();
+const listError = ref('');
+const pollingError = ref('');
+const taskWarnings = ref<string[]>([]);
+let disposed = false;
 let pollTimer: number | undefined;
 
 const query = reactive({
@@ -250,6 +257,7 @@ const statusConfig: Record<ReportStatus, { label: string; type: 'info' | 'warnin
   SUCCESS: { label: '生成完毕', type: 'success' },
   FAILED: { label: '生成失败', type: 'danger' }
 };
+const reportStatusConfig = (status: ReportStatus) => statusConfig[status] || { label: '状态未知', type: 'info' as const };
 
 const checkAllSections = computed(() => generateForm.selectedSections.length === allSections.length);
 
@@ -292,22 +300,28 @@ const toggleAllSections = (checked: string | number | boolean) => {
 
 const schedulePolling = () => {
   const hasActiveRows = rows.value.some((row) => isActiveStatus(row.status));
-  if (pollTimer || (!activeTaskIds.size && !hasActiveRows)) return;
+  if (disposed || pollTimer || (!activeTaskIds.size && !hasActiveRows)) return;
   pollTimer = window.setTimeout(pollTasks, 1800);
 };
 
 const loadReports = async (showLoading = true) => {
   if (showLoading) loading.value = true;
   try {
-    const result = await reportApi.list(projectId, query);
+    const result = await reportApi.list(projectId, query, { errorMode: 'manual' });
+    if (disposed) return false;
     rows.value = result.list;
     total.value = result.total;
     query.pageNo = result.pageNo;
     query.pageSize = result.pageSize;
+    listError.value = '';
+    return true;
   } catch (error) {
+    if (disposed || isIgnoredError(error)) return false;
+    listError.value = `报告列表加载失败：${getErrorMessage(error, '请稍后重试')}`;
     if (showLoading) {
-      ElMessage.error(`报告列表加载失败：${getErrorMessage(error, '请稍后重试')}`);
+      notifyApiError(error, `报告列表加载失败：${getErrorMessage(error, '请稍后重试')}`);
     }
+    return false;
   } finally {
     if (showLoading) loading.value = false;
     schedulePolling();
@@ -316,9 +330,15 @@ const loadReports = async (showLoading = true) => {
 
 const pollTasks = async () => {
   pollTimer = undefined;
+  if (disposed) return;
   const taskIds = [...activeTaskIds];
   if (taskIds.length) {
     const results = await Promise.allSettled(taskIds.map((taskId) => reportApi.task(projectId, taskId)));
+    if (disposed) return;
+    const failure = results.find((result) => result.status === 'rejected' && !isIgnoredError(result.reason));
+    pollingError.value = failure?.status === 'rejected'
+      ? `暂时无法获取报告任务状态：${getErrorMessage(failure.reason, '请检查网络后重试')}；正在尝试恢复`
+      : '';
     results.forEach((result, index) => {
       const taskId = taskIds[index];
       if (result.status === 'rejected') return;
@@ -337,7 +357,10 @@ const pollTasks = async () => {
   schedulePolling();
 };
 
-const registerTask = (task: ReportTaskStartResult) => {
+const registerTask = (task: ReportTaskStartResult, acknowledgedWarnings: string[] = []) => {
+  taskWarnings.value = [...new Set((task.warnings || []).map((item) => item.message))]
+    .filter((message) => !acknowledgedWarnings.includes(message));
+  if (taskWarnings.value.length) ElMessage.warning(taskWarnings.value.join('；'));
   if (isActiveStatus(task.status)) {
     activeTaskIds.add(task.reportTaskId);
     schedulePolling();
@@ -354,17 +377,16 @@ const reloadFirstPage = () => {
 };
 
 const refreshReports = async () => {
-  await loadReports();
-  ElMessage.success('报告列表已刷新');
+  if (await loadReports()) ElMessage.success('报告列表已刷新');
 };
 
 const openGenerateDialog = async () => {
   readinessLoading.value = true;
   try {
     const [project, reportReadiness, basicInfo] = await Promise.all([
-      projectStore.loadProject(projectId).catch(() => undefined),
+      projectStore.loadProject(projectId),
       reportApi.readiness(projectId),
-      basicInfoApi.detail(projectId).catch(() => null)
+      basicInfoApi.detail(projectId)
     ]);
     companyName.value = basicInfo?.organization?.name || project?.assessmentOrg || project?.projectName || '';
     reportProjectName.value = basicInfo?.projectName || project?.projectName || '';
@@ -374,7 +396,7 @@ const openGenerateDialog = async () => {
     generateForm.selectedSections = [...allSections];
     generateVisible.value = true;
   } catch (error) {
-    ElMessage.error(`生成前检查失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, `生成前检查失败：${getErrorMessage(error, '请稍后重试')}`);
   } finally {
     readinessLoading.value = false;
   }
@@ -413,18 +435,19 @@ const submitGenerate = async () => {
 
   submitting.value = true;
   try {
-    const task = await reportApi.generate(projectId, {
+    const response = await reportApi.generate(projectId, {
       reportName: generateForm.reportName,
       reportType: generateForm.reportType,
       selectedSections: [...generateForm.selectedSections]
     });
+    const task = response.data;
     generateVisible.value = false;
-    registerTask(task);
-    if (isActiveStatus(task.status)) ElMessage.success('报告生成任务已提交');
+    registerTask(task, readiness.value?.warnings.map((item) => item.message));
+    if (isActiveStatus(task.status)) notifyApiSuccess(response, '报告生成任务已提交');
     query.pageNo = 1;
     await loadReports();
   } catch (error) {
-    ElMessage.error(`提交生成失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, `提交生成失败：${getErrorMessage(error, '请稍后重试')}`);
   } finally {
     submitting.value = false;
   }
@@ -433,12 +456,13 @@ const submitGenerate = async () => {
 const retryReport = async (row: ReportListItem) => {
   retryingId.value = row.reportId;
   try {
-    const task = await reportApi.retry(projectId, row.reportId);
+    const response = await reportApi.retry(projectId, row.reportId);
+    const task = response.data;
     registerTask(task);
-    if (isActiveStatus(task.status)) ElMessage.success('报告重试任务已提交');
+    if (isActiveStatus(task.status)) notifyApiSuccess(response, '报告重试任务已提交');
     await loadReports();
   } catch (error) {
-    ElMessage.error(`报告重试失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, `报告重试失败：${getErrorMessage(error, '请稍后重试')}`);
   } finally {
     retryingId.value = '';
   }
@@ -456,7 +480,7 @@ const downloadReport = async (row: ReportListItem) => {
     URL.revokeObjectURL(url);
     ElMessage.success('报告下载已开始');
   } catch (error) {
-    ElMessage.error(`报告下载失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, `报告下载失败：${getErrorMessage(error, '请稍后重试')}`);
   } finally {
     downloadingId.value = '';
   }
@@ -475,12 +499,12 @@ const deleteReport = async (row: ReportListItem) => {
 
   deletingId.value = row.reportId;
   try {
-    await reportApi.delete(projectId, row.reportId);
-    ElMessage.success('报告已删除');
+    const response = await reportApi.delete(projectId, row.reportId);
+    notifyApiSuccess(response, '报告已删除');
     if (rows.value.length === 1 && query.pageNo > 1) query.pageNo -= 1;
     await loadReports();
   } catch (error) {
-    ElMessage.error(`报告删除失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, `报告删除失败：${getErrorMessage(error, '请稍后重试')}`);
   } finally {
     deletingId.value = '';
   }
@@ -491,6 +515,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  disposed = true;
   if (pollTimer) window.clearTimeout(pollTimer);
 });
 </script>

@@ -5,6 +5,7 @@ import type { ProjectDetail } from '@/types/project';
 export const useProjectStore = defineStore('project', {
   state: () => ({
     currentProject: null as ProjectDetail | null,
+    requestVersion: 0,
     loading: false
   }),
   actions: {
@@ -13,15 +14,20 @@ export const useProjectStore = defineStore('project', {
         return this.currentProject;
       }
       this.loading = true;
+      const requestVersion = ++this.requestVersion;
       try {
-        this.currentProject = await projectApi.detail(projectId);
+        const project = await projectApi.detail(projectId);
+        if (requestVersion !== this.requestVersion) return null;
+        this.currentProject = project;
         return this.currentProject;
       } finally {
-        this.loading = false;
+        if (requestVersion === this.requestVersion) this.loading = false;
       }
     },
     clearProject() {
+      this.requestVersion += 1;
       this.currentProject = null;
+      this.loading = false;
     }
   }
 });

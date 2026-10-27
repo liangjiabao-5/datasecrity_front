@@ -38,6 +38,7 @@
       <el-button :icon="Refresh" @click="resetQuery">重置</el-button>
     </div>
 
+    <el-alert v-if="listError || statisticsError" :title="listError || statisticsError" type="error" :closable="false" show-icon style="margin-bottom: 16px" />
     <div class="panel table-panel">
       <el-table v-loading="loading" :data="rows" row-key="id">
         <el-table-column prop="projectName" label="项目名称" min-width="220" show-overflow-tooltip />
@@ -48,7 +49,7 @@
         <el-table-column prop="assessmentPeriod" label="评估周期" width="210" />
         <el-table-column prop="statusName" label="状态" width="110">
           <template #default="{ row }">
-            <el-tag :type="projectStatusTagType[row.status]" effect="light">{{ row.statusName }}</el-tag>
+            <el-tag :type="statusTagType(row.status)" effect="light">{{ row.statusName }}</el-tag>
           </template>
         </el-table-column>
         <el-table-column label="操作" width="410" fixed="right">
@@ -87,33 +88,7 @@
       </div>
     </div>
 
-    <el-dialog v-model="detailVisible" title="项目详情" width="760px">
-      <el-descriptions v-if="detail" :column="2" border>
-        <el-descriptions-item label="项目名称">{{ detail.projectName }}</el-descriptions-item>
-        <el-descriptions-item label="项目编号">{{ detail.projectCode }}</el-descriptions-item>
-        <el-descriptions-item label="评估单位">{{ detail.assessmentOrg }}</el-descriptions-item>
-        <el-descriptions-item label="项目状态">{{ detail.statusName }}</el-descriptions-item>
-        <el-descriptions-item label="项目所有者">{{ detail.ownerName || '-' }}</el-descriptions-item>
-        <el-descriptions-item label="当前身份">{{ detail.accessType ? accessTypeName(detail.accessType) : '-' }}</el-descriptions-item>
-        <el-descriptions-item label="系统类别">{{ formatProjectSystemType(detail.systemType, detail.systemTypeName) }}</el-descriptions-item>
-        <el-descriptions-item label="评估模板">{{ projectOptionLabel(options.assessmentTemplates, detail.assessmentTemplateId, detail.assessmentTemplateName, detail.assessmentTemplateVersion) }}</el-descriptions-item>
-        <el-descriptions-item label="评分模型">{{ projectOptionLabel(options.scoreModels, detail.scoreModelId, detail.scoreModelName, detail.scoreModelVersion) }}</el-descriptions-item>
-        <el-descriptions-item label="风险评价矩阵">{{ projectOptionLabel(options.riskMatrices, detail.riskMatrixId, detail.riskMatrixName, detail.riskMatrixVersion) }}</el-descriptions-item>
-        <el-descriptions-item label="危害程度模型">{{ projectOptionLabel(options.harmModels, detail.harmModelId, detail.harmModelName, detail.harmModelVersion) }}</el-descriptions-item>
-        <el-descriptions-item label="项目描述" :span="2">{{ detail.description || '-' }}</el-descriptions-item>
-      </el-descriptions>
-
-      <el-divider content-position="left">团队成员</el-divider>
-      <el-table :data="detail?.teamMembers || []" empty-text="暂无团队成员">
-        <el-table-column prop="name" label="姓名" />
-        <el-table-column prop="organization" label="单位" />
-        <el-table-column prop="role" label="角色" />
-      </el-table>
-
-      <template #footer>
-        <el-button @click="detailVisible = false">关闭</el-button>
-      </template>
-    </el-dialog>
+    <ProjectDetailDialog v-model="detailVisible" :project-id="detailProjectId" :reload-key="detailRevision" />
 
     <ProjectMemberPanel
       v-if="memberProject"
@@ -126,33 +101,40 @@
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from 'vue';
-import { useRouter } from 'vue-router';
-import { ElMessage, ElMessageBox } from 'element-plus';
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from 'vue';
+import { useRoute, useRouter } from 'vue-router';
+import { ElMessageBox } from 'element-plus';
 import { Delete, Edit, Plus, Refresh, Search, UserFilled, VideoPlay, View } from '@element-plus/icons-vue';
 import { projectApi } from '@/api/projectApi';
-import type { ProjectConfigOptions, ProjectDetail, ProjectListItem, ProjectStatus, SelectOption } from '@/types/project';
-import { formatProjectSystemType, projectStatusTagType } from '@/utils/labels';
+import { notifyApiError, notifyApiSuccess } from '@/utils/apiFeedback';
+import type { ProjectListItem, ProjectStatus } from '@/types/project';
+import { projectStatusTagType } from '@/utils/labels';
+import { normalizeProjectStatus } from '@/utils/projectPresentation';
 import { useAuthStore } from '@/stores/auth';
 import ProjectMemberPanel from '@/components/project/ProjectMemberPanel.vue';
+import ProjectDetailDialog from '@/components/project/ProjectDetailDialog.vue';
 
+const route = useRoute();
 const router = useRouter();
 const auth = useAuthStore();
 const loading = ref(false);
+const listError = ref('');
+const statisticsError = ref('');
 const rows = ref<ProjectListItem[]>([]);
 const total = ref(0);
 const detailVisible = ref(false);
-const detail = ref<ProjectDetail | null>(null);
+const detailProjectId = ref('');
+const detailRevision = ref(0);
 const memberProject = ref<ProjectListItem | null>(null);
 const memberVisible = ref(false);
-const optionsLoaded = ref(false);
-let optionsLoadPromise: Promise<void> | null = null;
+let listRevision = 0;
+let statisticsRevision = 0;
 
 const query = reactive({
   pageNo: 1,
   pageSize: 10,
   keyword: '',
-  status: '' as '' | ProjectStatus
+  status: normalizeProjectStatus(route.query.status)
 });
 
 const stats = reactive({
@@ -162,28 +144,33 @@ const stats = reactive({
   completed: 0
 });
 
-const options = reactive<ProjectConfigOptions>({
-  assessmentTemplates: [],
-  riskMatrices: [],
-  harmModels: [],
-  scoreModels: [],
-  systemTypes: []
-});
-
 const statusCards = computed(() => [
-  { key: 'all', label: '全部项目', value: stats.all, status: '' as '' | ProjectStatus },
-  { key: 'notStarted', label: '待开始', value: stats.notStarted, status: 'NOT_STARTED' as const },
-  { key: 'inProgress', label: '进行中', value: stats.inProgress, status: 'IN_PROGRESS' as const },
-  { key: 'completed', label: '已完成', value: stats.completed, status: 'COMPLETED' as const }
+  { key: 'all', label: '全部项目', value: statisticsError.value ? '—' : stats.all, status: '' as '' | ProjectStatus },
+  { key: 'notStarted', label: '待开始', value: statisticsError.value ? '—' : stats.notStarted, status: 'NOT_STARTED' as const },
+  { key: 'inProgress', label: '进行中', value: statisticsError.value ? '—' : stats.inProgress, status: 'IN_PROGRESS' as const },
+  { key: 'completed', label: '已完成', value: statisticsError.value ? '—' : stats.completed, status: 'COMPLETED' as const }
 ]);
 
 const loadStatistics = async () => {
-  const next = await projectApi.statistics();
-  Object.assign(stats, next);
+  const revision = ++statisticsRevision;
+  const version = auth.sessionVersion;
+  try {
+    const next = await projectApi.statistics();
+    if (revision === statisticsRevision && version === auth.sessionVersion) {
+      Object.assign(stats, next);
+      statisticsError.value = '';
+    }
+  } catch (error) {
+    if (revision !== statisticsRevision || version !== auth.sessionVersion) return;
+    statisticsError.value = '项目统计加载失败，请重新查询';
+    notifyApiError(error, '项目统计加载失败，请重试');
+  }
 };
 
 const loadProjects = async () => {
   loading.value = true;
+  const revision = ++listRevision;
+  const version = auth.sessionVersion;
   try {
     const page = await projectApi.list({
       pageNo: query.pageNo,
@@ -191,10 +178,20 @@ const loadProjects = async () => {
       keyword: query.keyword,
       status: query.status || undefined
     });
-    rows.value = page.list;
-    total.value = page.total;
+    if (revision === listRevision && version === auth.sessionVersion) {
+      rows.value = page.list;
+      total.value = page.total;
+      listError.value = '';
+    }
+  } catch (error) {
+    if (revision === listRevision && version === auth.sessionVersion) {
+      listError.value = '项目列表加载失败，请重新查询';
+      notifyApiError(error, '项目列表加载失败，请重试');
+      rows.value = [];
+      total.value = 0;
+    }
   } finally {
-    loading.value = false;
+    if (revision === listRevision) loading.value = false;
   }
 };
 
@@ -206,46 +203,24 @@ const reloadFirstPage = () => {
 
 const resetQuery = () => {
   query.keyword = '';
-  query.status = '';
-  reloadFirstPage();
+  switchStatus('');
 };
 
 const switchStatus = (status: '' | ProjectStatus) => {
-  query.status = status;
-  reloadFirstPage();
+  if (normalizeProjectStatus(route.query.status) === status) {
+    reloadFirstPage();
+  } else {
+    router.push({ path: '/projects', query: { ...route.query, status: status || undefined } });
+  }
 };
+
+const statusTagType = (status: ProjectStatus) => projectStatusTagType[status];
 
 const accessTypeName = (accessType: NonNullable<ProjectListItem['accessType']>) => ({ ADMIN: '管理员', OWNER: '所有者', COLLABORATOR: '协作人' }[accessType]);
 const accessTypeTagType = (accessType: NonNullable<ProjectListItem['accessType']>) => ({ ADMIN: 'danger', OWNER: 'success', COLLABORATOR: 'info' }[accessType]);
 
-const withVersion = (name: string, version?: string | null) => (version ? `${name}（${version}）` : name);
-
-const projectOptionLabel = (items: SelectOption[], id: string, name?: string | null, version?: string | null) => {
-  if (name) return withVersion(name, version);
-  const option = items.find((item) => item.id === id);
-  if (option) return withVersion(option.name, option.version);
-  return id || '-';
-};
-
-const loadProjectOptions = async () => {
-  if (optionsLoaded.value) return;
-  if (!optionsLoadPromise) {
-    optionsLoadPromise = projectApi
-      .configOptions()
-      .then((next) => {
-        Object.assign(options, next);
-        optionsLoaded.value = true;
-      })
-      .finally(() => {
-        optionsLoadPromise = null;
-      });
-  }
-  await optionsLoadPromise;
-};
-
-const openDetail = async (projectId: string) => {
-  const [nextDetail] = await Promise.all([projectApi.detail(projectId), loadProjectOptions().catch(() => undefined)]);
-  detail.value = nextDetail;
+const openDetail = (projectId: string) => {
+  detailProjectId.value = projectId;
   detailVisible.value = true;
 };
 
@@ -253,8 +228,8 @@ const startProject = async (projectId: string) => {
   await ElMessageBox.confirm('开始评估后将进入项目基本信息页面，并由后端生成检查项快照。', '确认开始评估', {
     type: 'warning'
   });
-  await projectApi.start(projectId);
-  ElMessage.success('项目已进入评估流程');
+  const response = await projectApi.start(projectId);
+  notifyApiSuccess(response, '项目已进入评估流程');
   await loadStatistics();
   await router.push(`/projects/${projectId}/basic`);
 };
@@ -263,8 +238,8 @@ const removeProject = async (projectId: string) => {
   await ElMessageBox.confirm('删除项目将执行逻辑删除，已生成报告的审计记录应由后端保留。', '确认删除项目', {
     type: 'warning'
   });
-  await projectApi.delete(projectId);
-  ElMessage.success('项目已删除');
+  const response = await projectApi.delete(projectId);
+  notifyApiSuccess(response, '项目已删除');
   reloadFirstPage();
 };
 
@@ -278,11 +253,26 @@ const reloadAfterOwnerTransfer = async () => {
   if (memberProject.value) {
     memberProject.value = rows.value.find((project) => project.id === memberProject.value?.id) || memberProject.value;
   }
-  if (detail.value) detail.value = await projectApi.detail(detail.value.id);
+  detailRevision.value += 1;
 };
 
+watch(() => route.query.status, (status) => {
+  query.status = normalizeProjectStatus(status);
+  reloadFirstPage();
+});
+watch(() => auth.sessionVersion, () => {
+  listRevision += 1;
+  statisticsRevision += 1;
+  rows.value = [];
+  listError.value = '';
+  statisticsError.value = '';
+  total.value = 0;
+  Object.assign(stats, { all: 0, notStarted: 0, inProgress: 0, completed: 0 });
+  detailVisible.value = false;
+  memberVisible.value = false;
+}, { flush: 'sync' });
+onBeforeUnmount(() => { listRevision += 1; statisticsRevision += 1; });
 onMounted(() => {
-  loadProjectOptions().catch(() => undefined);
   loadStatistics();
   loadProjects();
 });

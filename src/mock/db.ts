@@ -254,7 +254,7 @@ const fillNames = (payload: ProjectCreatePayload, id: string): ProjectDetail => 
     assessmentOrg: payload.assessmentOrg,
     status: 'NOT_STARTED',
     statusName: projectStatusLabels.NOT_STARTED,
-    createdAt: new Date().toISOString().slice(0, 10),
+    createdAt: new Date().toISOString(),
     ownerName: '当前用户',
     assessmentPeriod: '-',
     contacts: '',
@@ -299,7 +299,8 @@ export const mockDb = {
         return [project.projectName, project.projectCode, project.assessmentOrg].some((value) =>
           value.toLowerCase().includes(keyword)
         );
-      });
+      })
+      .sort((left, right) => (right.createdAt || '').localeCompare(left.createdAt || ''));
     const start = (query.pageNo - 1) * query.pageSize;
     return delay({
       list: filtered.slice(start, start + query.pageSize).map(toListItem),
@@ -336,6 +337,7 @@ export const mockDb = {
     projects[index] = {
       ...projects[index],
       ...next,
+      createdAt: projects[index].createdAt,
       status: projects[index].status,
       statusName: projectStatusLabels[projects[index].status],
       teamMembers: projects[index].teamMembers

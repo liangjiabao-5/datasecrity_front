@@ -10,12 +10,14 @@ import SummaryView from '@/views/workflow/SummaryView.vue';
 import ReportManagementView from '@/views/workflow/ReportManagementView.vue';
 import KnowledgeView from '@/views/knowledge/KnowledgeView.vue';
 import LoginView from '@/views/LoginView.vue';
+import DashboardView from '@/views/DashboardView.vue';
 import SettingsHomeView from '@/views/settings/SettingsHomeView.vue';
 import UserManagementView from '@/views/settings/UserManagementView.vue';
 import RoleManagementView from '@/views/settings/RoleManagementView.vue';
 import PermissionDictionaryView from '@/views/settings/PermissionDictionaryView.vue';
 import { useAuthStore } from '@/stores/auth';
 import { useProjectStore } from '@/stores/project';
+import { notifyApiError } from '@/utils/apiFeedback';
 
 declare module 'vue-router' {
   interface RouteMeta {
@@ -30,10 +32,11 @@ const routes: RouteRecordRaw[] = [
   {
     path: '/',
     component: AppLayout,
-    redirect: '/projects',
+    redirect: '/dashboard',
     meta: { requiresAuth: true },
     children: [
-      { path: 'projects', name: 'projects', component: ProjectListView, meta: { title: '项目管理' } },
+      { path: 'dashboard', name: 'dashboard', component: DashboardView, meta: { title: '首页' } },
+      { path: 'projects', name: 'projects', component: ProjectListView, meta: { title: '项目管理', requiresPermission: 'project:read' } },
       {
         path: 'projects/create',
         name: 'project-create',
@@ -112,7 +115,7 @@ router.beforeEach(async (to) => {
   const auth = useAuthStore();
   const requiresAuth = to.matched.some((record) => record.meta.requiresAuth);
   if (!requiresAuth) {
-    if (to.name === 'login' && auth.isAuthenticated) return '/projects';
+    if (to.name === 'login' && auth.isAuthenticated) return '/dashboard';
     return true;
   }
 
@@ -124,20 +127,27 @@ router.beforeEach(async (to) => {
     .map((record) => record.meta.requiresPermission)
     .filter((permission): permission is string => Boolean(permission));
   if (requiredPermissions.some((permission) => !auth.hasPermission(permission))) {
-    return '/projects';
+    return '/dashboard';
   }
   const anyPermissions = to.matched.flatMap((record) => record.meta.requiresAnyPermissions || []);
   if (anyPermissions.length && !auth.hasAnyPermission(anyPermissions)) {
-    return '/projects';
+    return '/dashboard';
   }
 
   const projectId = typeof to.params.projectId === 'string' ? to.params.projectId : '';
   if (projectId) {
     try {
       const project = await useProjectStore().loadProject(projectId, true);
-      if (project?.canView === false) return '/projects';
-      if (to.name === 'project-edit' && project?.canEdit === false) return `/projects/${projectId}/basic`;
-    } catch {
+      if (!project || project.canView === false) {
+        notifyApiError({ message: '当前项目不可访问，请确认项目仍存在且有访问权限' });
+        return '/projects';
+      }
+      if (to.name === 'project-edit' && project?.canEdit === false) {
+        notifyApiError({ message: '当前账号没有编辑该项目的权限' });
+        return `/projects/${projectId}/basic`;
+      }
+    } catch (error) {
+      notifyApiError(error, '项目加载失败，请重试');
       return '/projects';
     }
   }

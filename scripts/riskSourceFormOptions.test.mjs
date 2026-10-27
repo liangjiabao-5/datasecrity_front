@@ -36,7 +36,8 @@ runTest('risk source edit dialog refreshes data options after processing activit
   assert.match(summaryView, /const sourceRelatedActivityValues = ref<string\[\]>\(\[\]\)/);
   assert.match(summaryView, /@change="handleSourceRelatedActivitiesChange"/);
   assert.match(summaryView, /const handleSourceRelatedActivitiesChange = async \(\) => \{\s*sourceRelatedDataValues\.value = \[\];\s*await fetchRiskFormOptions\(sourceRelatedActivityValues\.value\);/);
-  assert.match(summaryView, /riskApi\.formOptions\(projectId, relatedActivities\)/);
+  assert.match(summaryView, /const activityValues = uniqueValues\(relatedActivities\)/);
+  assert.match(summaryView, /riskApi\.formOptions\(projectId, activityValues\)/);
   assert.match(summaryView, /:disabled="!sourceRelatedActivityValues\.length"/);
   assert.match(summaryView, /splitRelatedData\(sourceRow\.relatedData\)/);
   assert.match(summaryView, /relatedData: sourceRelatedDataValues\.value/);

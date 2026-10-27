@@ -1,3 +1,5 @@
+import type { ApiResponse } from '@/types/api';
+import { mockEnvelope } from '@/utils/apiFeedback';
 import { mockDb } from '@/mock/db';
 import type { PageResult } from '@/types/api';
 import type { AssessmentTeamMember, ClientTeamMember, FocusPoint, GapItem } from '@/types/plan';
@@ -31,16 +33,16 @@ export const planApi = {
       .then(normalizeList);
   },
 
-  saveAssessmentTeam(projectId: string, payload: Omit<AssessmentTeamMember, 'id'>, id?: string): Promise<AssessmentTeamMember> {
-    if (useMock) return mockDb.saveAssessmentTeam(projectId, payload, id);
+  saveAssessmentTeam(projectId: string, payload: Omit<AssessmentTeamMember, 'id'>, id?: string): Promise<ApiResponse<AssessmentTeamMember>> {
+    if (useMock) return mockEnvelope(mockDb.saveAssessmentTeam(projectId, payload, id));
     return id
-      ? http.put(`/projects/${projectId}/plan/assessment-team/${id}`, payload)
-      : http.post(`/projects/${projectId}/plan/assessment-team`, payload);
+      ? http.putEnvelope(`/projects/${projectId}/plan/assessment-team/${id}`, payload)
+      : http.postEnvelope(`/projects/${projectId}/plan/assessment-team`, payload);
   },
 
-  deleteAssessmentTeam(projectId: string, id: string): Promise<void> {
-    if (useMock) return mockDb.deleteAssessmentTeam(projectId, id);
-    return http.delete(`/projects/${projectId}/plan/assessment-team/${id}`);
+  deleteAssessmentTeam(projectId: string, id: string): Promise<ApiResponse<void>> {
+    if (useMock) return mockEnvelope(mockDb.deleteAssessmentTeam(projectId, id));
+    return http.deleteEnvelope(`/projects/${projectId}/plan/assessment-team/${id}`);
   },
 
   listClientTeam(projectId: string): Promise<ClientTeamMember[]> {
@@ -48,16 +50,16 @@ export const planApi = {
     return http.get<PlanListResponse<ClientTeamMember>>(`/projects/${projectId}/plan/client-team`).then(normalizeList);
   },
 
-  saveClientTeam(projectId: string, payload: Omit<ClientTeamMember, 'id'>, id?: string): Promise<ClientTeamMember> {
-    if (useMock) return mockDb.saveClientTeam(projectId, payload, id);
+  saveClientTeam(projectId: string, payload: Omit<ClientTeamMember, 'id'>, id?: string): Promise<ApiResponse<ClientTeamMember>> {
+    if (useMock) return mockEnvelope(mockDb.saveClientTeam(projectId, payload, id));
     return id
-      ? http.put(`/projects/${projectId}/plan/client-team/${id}`, payload)
-      : http.post(`/projects/${projectId}/plan/client-team`, payload);
+      ? http.putEnvelope(`/projects/${projectId}/plan/client-team/${id}`, payload)
+      : http.postEnvelope(`/projects/${projectId}/plan/client-team`, payload);
   },
 
-  deleteClientTeam(projectId: string, id: string): Promise<void> {
-    if (useMock) return mockDb.deleteClientTeam(projectId, id);
-    return http.delete(`/projects/${projectId}/plan/client-team/${id}`);
+  deleteClientTeam(projectId: string, id: string): Promise<ApiResponse<void>> {
+    if (useMock) return mockEnvelope(mockDb.deleteClientTeam(projectId, id));
+    return http.deleteEnvelope(`/projects/${projectId}/plan/client-team/${id}`);
   },
 
   listFocusPoints(projectId: string): Promise<FocusPoint[]> {
@@ -65,16 +67,16 @@ export const planApi = {
     return http.get<PlanListResponse<FocusPoint>>(`/projects/${projectId}/plan/focus-points`).then(normalizeList);
   },
 
-  saveFocusPoint(projectId: string, payload: Omit<FocusPoint, 'id'>, id?: string): Promise<FocusPoint> {
-    if (useMock) return mockDb.saveFocusPoint(projectId, payload, id);
+  saveFocusPoint(projectId: string, payload: Omit<FocusPoint, 'id'>, id?: string): Promise<ApiResponse<FocusPoint>> {
+    if (useMock) return mockEnvelope(mockDb.saveFocusPoint(projectId, payload, id));
     return id
-      ? http.put(`/projects/${projectId}/plan/focus-points/${id}`, payload)
-      : http.post(`/projects/${projectId}/plan/focus-points`, payload);
+      ? http.putEnvelope(`/projects/${projectId}/plan/focus-points/${id}`, payload)
+      : http.postEnvelope(`/projects/${projectId}/plan/focus-points`, payload);
   },
 
-  deleteFocusPoint(projectId: string, id: string): Promise<void> {
-    if (useMock) return mockDb.deleteFocusPoint(projectId, id);
-    return http.delete(`/projects/${projectId}/plan/focus-points/${id}`);
+  deleteFocusPoint(projectId: string, id: string): Promise<ApiResponse<void>> {
+    if (useMock) return mockEnvelope(mockDb.deleteFocusPoint(projectId, id));
+    return http.deleteEnvelope(`/projects/${projectId}/plan/focus-points/${id}`);
   },
 
   listGapItems(projectId: string): Promise<GapItem[]> {
@@ -82,16 +84,16 @@ export const planApi = {
     return http.get<PlanListResponse<GapItem>>(`/projects/${projectId}/plan/gap-items`).then(normalizeList);
   },
 
-  saveGapItem(projectId: string, payload: Omit<GapItem, 'id'>, id?: string): Promise<GapItem> {
-    if (useMock) return mockDb.saveGapItem(projectId, payload, id);
+  saveGapItem(projectId: string, payload: Omit<GapItem, 'id'>, id?: string): Promise<ApiResponse<GapItem>> {
+    if (useMock) return mockEnvelope(mockDb.saveGapItem(projectId, payload, id));
     return id
-      ? http.put(`/projects/${projectId}/plan/gap-items/${id}`, payload)
-      : http.post(`/projects/${projectId}/plan/gap-items`, payload);
+      ? http.putEnvelope(`/projects/${projectId}/plan/gap-items/${id}`, payload)
+      : http.postEnvelope(`/projects/${projectId}/plan/gap-items`, payload);
   },
 
-  deleteGapItem(projectId: string, id: string): Promise<void> {
-    if (useMock) return mockDb.deleteGapItem(projectId, id);
-    return http.delete(`/projects/${projectId}/plan/gap-items/${id}`);
+  deleteGapItem(projectId: string, id: string): Promise<ApiResponse<void>> {
+    if (useMock) return mockEnvelope(mockDb.deleteGapItem(projectId, id));
+    return http.deleteEnvelope(`/projects/${projectId}/plan/gap-items/${id}`);
   },
 
   async exportTeamTemplate(projectId: string): Promise<Blob> {
@@ -115,18 +117,18 @@ export const planApi = {
     return http.blob(`/projects/${projectId}/plan/team-export`);
   },
 
-  async importTeams(projectId: string, file: File): Promise<PlanTeamExcelImportResult> {
+  async importTeams(projectId: string, file: File): Promise<ApiResponse<PlanTeamExcelImportResult>> {
     if (useMock) {
       const [assessmentTeam, clientTeam] = await Promise.all([
         mockDb.listAssessmentTeam(projectId),
         mockDb.listClientTeam(projectId)
       ]);
-      return { assessmentTeam, clientTeam };
+      return mockEnvelope(Promise.resolve({ assessmentTeam, clientTeam }));
     }
 
     const formData = new FormData();
     formData.append('file', file);
-    return http.post<PlanTeamExcelImportResult>(`/projects/${projectId}/plan/team-import`, formData, {
+    return http.postEnvelope<PlanTeamExcelImportResult>(`/projects/${projectId}/plan/team-import`, formData, {
       headers: { 'Content-Type': 'multipart/form-data' },
       timeout: 60000
     });

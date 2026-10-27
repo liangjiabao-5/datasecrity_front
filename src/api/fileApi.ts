@@ -11,5 +11,8 @@ export const fileApi = {
   },
   downloadUrl(fileId: string) {
     return `${apiBaseUrl.replace(/\/$/, '')}/files/${encodeURIComponent(fileId)}/download`;
+  },
+  download(fileId: string) {
+    return http.blobFile(`/files/${encodeURIComponent(fileId)}/download`, { timeout: 60000 });
   }
 };

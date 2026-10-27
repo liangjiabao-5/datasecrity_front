@@ -1,26 +1,28 @@
+import type { ApiResponse } from '@/types/api';
 import { http } from '@/utils/request';
 import type { AuthSession, ChangePasswordPayload, LoginPayload, Principal } from '@/types/auth';
+import type { AxiosRequestConfig } from 'axios';
 
-const publicRequestConfig = { skipAuthRefresh: true };
+const publicRequestConfig: AxiosRequestConfig = { skipAuthRefresh: true, errorMode: 'manual' };
 
 export const authApi = {
-  login(payload: LoginPayload): Promise<AuthSession> {
-    return http.post('/auth/login', payload, publicRequestConfig);
+  login(payload: LoginPayload): Promise<ApiResponse<AuthSession>> {
+    return http.postEnvelope('/auth/login', payload, publicRequestConfig);
   },
 
   refresh(): Promise<AuthSession> {
     return http.post('/auth/refresh', undefined, publicRequestConfig);
   },
 
-  logout(): Promise<void> {
-    return http.post('/auth/logout', undefined, publicRequestConfig);
+  logout(): Promise<ApiResponse<void>> {
+    return http.postEnvelope('/auth/logout', undefined, publicRequestConfig);
   },
 
-  me(): Promise<Principal> {
-    return http.get('/auth/me');
+  me(config?: AxiosRequestConfig): Promise<Principal> {
+    return http.get('/auth/me', config);
   },
 
-  changePassword(payload: ChangePasswordPayload): Promise<Partial<AuthSession> | void> {
-    return http.put('/auth/me/password', payload);
+  changePassword(payload: ChangePasswordPayload): Promise<ApiResponse<Partial<AuthSession> | void>> {
+    return http.putEnvelope('/auth/me/password', payload);
   }
 };

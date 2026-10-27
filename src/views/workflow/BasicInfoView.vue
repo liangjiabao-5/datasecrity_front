@@ -151,6 +151,7 @@
 </template>
 
 <script setup lang="ts">
+import { notifyApiError } from '@/utils/apiFeedback';
 import { onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
 import { ElMessage } from 'element-plus';
@@ -158,6 +159,7 @@ import type { UploadFile } from 'element-plus';
 import { Download, Plus, Upload } from '@element-plus/icons-vue';
 import ProjectHeader from '@/components/ProjectHeader.vue';
 import { basicInfoApi } from '@/api/basicInfoApi';
+import { notifyApiSuccess } from '@/utils/apiFeedback';
 import type { BasicInfoPayload, ContactInfo, CustomReferenceType, ReferenceItem } from '@/types/basicInfo';
 import { downloadBlobFile } from '@/utils/fileActions';
 import { normalizeBasicInfoExcelImportResult } from '@/utils/basicInfoExcelImportResult';
@@ -200,8 +202,8 @@ const normalizeBasicInfo = (payload?: Partial<BasicInfoPayload> | null): BasicIn
     ...defaults,
     projectNumber: source?.projectNumber || source?.projectCode || '',
     projectName: source?.projectName || '',
-    laws: Array.isArray(payload?.laws) ? payload.laws : [],
-    standards: Array.isArray(payload?.standards) ? payload.standards : [],
+    laws: Array.isArray(payload?.laws) ? payload!.laws! : [],
+    standards: Array.isArray(payload?.standards) ? payload!.standards! : [],
     assessmentPlan: {
       ...defaults.assessmentPlan,
       ...assessmentPlan,
@@ -212,7 +214,7 @@ const normalizeBasicInfo = (payload?: Partial<BasicInfoPayload> | null): BasicIn
       name: organization.name || '',
       postalCode: organization.postalCode || ''
     },
-    contacts: Array.isArray(payload?.contacts) ? payload.contacts : []
+    contacts: Array.isArray(payload?.contacts) ? payload!.contacts! : []
   };
 };
 
@@ -246,8 +248,8 @@ const save = async () => {
   if (!assertValid()) return false;
   saving.value = true;
   try {
-    await basicInfoApi.save(projectId, form);
-    ElMessage.success('项目基本信息已保存');
+    const response = await basicInfoApi.save(projectId, form);
+    notifyApiSuccess(response, '项目基本信息已保存');
     return true;
   } finally {
     saving.value = false;
@@ -275,7 +277,7 @@ const exportBasicInfoTemplate = async () => {
     downloadBlobFile(`项目基本信息模板-${projectId}.xlsx`, blob);
     ElMessage.success('项目基本信息模板已导出');
   } catch (error) {
-    ElMessage.error(`项目基本信息模板导出失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, `项目基本信息模板导出失败：${getErrorMessage(error, '请稍后重试')}`);
   }
 };
 
@@ -285,7 +287,7 @@ const exportBasicInfo = async () => {
     downloadBlobFile(`项目基本信息-${projectId}.xlsx`, blob);
     ElMessage.success('项目基本信息已导出');
   } catch (error) {
-    ElMessage.error(`项目基本信息导出失败：${getErrorMessage(error, '请稍后重试')}`);
+    notifyApiError(error, `项目基本信息导出失败：${getErrorMessage(error, '请稍后重试')}`);
   }
 };
 
@@ -294,9 +296,9 @@ const importBasicInfo = async (file: UploadFile) => {
   try {
     const payload = await basicInfoApi.importExcel(projectId, file.raw);
     Object.assign(form, normalizeBasicInfoExcelImportResult(payload));
-    ElMessage.success('项目基本信息已导入，请保存后生效');
+    notifyApiSuccess(payload, '项目基本信息已导入，请保存后生效');
   } catch (error) {
-    ElMessage.error(`项目基本信息导入失败：${getErrorMessage(error, '请检查导入文件或接口服务')}`);
+    notifyApiError(error, `项目基本信息导入失败：${getErrorMessage(error, '请检查导入文件或接口服务')}`);
   }
 };
 
@@ -325,11 +327,12 @@ const createReference = async () => {
     ElMessage.warning('请输入名称');
     return;
   }
-  const item = await basicInfoApi.createCustomReference(projectId, {
+  const response = await basicInfoApi.createCustomReference(projectId, {
     type: referenceType.value,
     name: referenceName.value.trim(),
     saveToKnowledge: saveToKnowledge.value
   });
+  const item = response.data;
   if (referenceType.value === 'LAW') {
     lawOptions.value.push(item);
     form.laws.push(item);
@@ -338,7 +341,7 @@ const createReference = async () => {
     form.standards.push(item);
   }
   referenceVisible.value = false;
-  ElMessage.success('自定义条目已添加');
+  notifyApiSuccess(response, '自定义条目已添加');
 };
 
 onMounted(load);

@@ -108,8 +108,9 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue';
 import { useRoute, useRouter } from 'vue-router';
-import { ElMessage, ElMessageBox, FormInstance, FormRules } from 'element-plus';
+import { ElMessageBox, FormInstance, FormRules } from 'element-plus';
 import { projectApi } from '@/api/projectApi';
+import { notifyApiSuccess } from '@/utils/apiFeedback';
 import type { ProjectConfigOptions, ProjectCreatePayload, ProjectDetail } from '@/types/project';
 
 const props = defineProps<{
@@ -182,7 +183,8 @@ const hasModelChange = () => {
 };
 
 const submit = async () => {
-  await formRef.value?.validate();
+  const valid = await formRef.value?.validate().catch(() => false);
+  if (!valid) return;
   if (isEdit.value && hasModelChange()) {
     await ElMessageBox.confirm(
       '当前修改会影响检查项、分数计算或风险等级判定。已生成的风险清单和报告不会被静默覆盖，请保存后按需重新计算或生成。',
@@ -194,12 +196,12 @@ const submit = async () => {
   saving.value = true;
   try {
     if (isEdit.value) {
-      await projectApi.update(projectId.value, form);
-      ElMessage.success('项目修改已保存');
+      const response = await projectApi.update(projectId.value, form);
+      notifyApiSuccess(response, '项目修改已保存');
       await router.push('/projects');
     } else {
-      await projectApi.create(form);
-      ElMessage.success('项目创建成功');
+      const response = await projectApi.create(form);
+      notifyApiSuccess(response, '项目创建成功');
       await router.push('/projects');
     }
   } finally {
